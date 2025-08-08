@@ -5,6 +5,7 @@ namespace ResearchAgentNetwork
 {
     public static class KernelExtensions
     {
+        public static bool EnablePromptLogging { get; set; } = false;
         /// <summary>
         /// Executes a prompt and returns the result as a strongly-typed object.
         /// The prompt will be enhanced with JSON schema instructions to ensure structured output.
@@ -33,9 +34,23 @@ IMPORTANT: You must respond with valid JSON that conforms to this exact schema:
 
 Ensure your response is valid JSON and matches the schema structure exactly. Do not include any text before or after the JSON.";
 
-            // Execute the prompt
+            // Execute the prompt with optional console logging
+            if (EnablePromptLogging)
+            {
+                Console.WriteLine("——— LLM Prompt ———");
+                Console.WriteLine(enhancedPrompt);
+                Console.WriteLine("———————————————");
+            }
+
             var result = await kernel.InvokePromptAsync(enhancedPrompt, arguments, cancellationToken: cancellationToken);
             var raw = result.GetValue<string>() ?? "{}";
+
+            if (EnablePromptLogging)
+            {
+                Console.WriteLine("——— LLM Response ———");
+                Console.WriteLine(raw);
+                Console.WriteLine("———————————————");
+            }
 
             // Attempt to trim code fences or prose around JSON if model ignored instructions
             var jsonResponse = ExtractJsonPayload(raw);

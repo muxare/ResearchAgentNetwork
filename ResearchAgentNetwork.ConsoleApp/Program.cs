@@ -454,11 +454,14 @@ Consider if it's focused, specific, and can be answered directly.";
         private readonly Dictionary<string, IResearchAgent> _agents = new();
         private readonly Kernel _kernel;
         private readonly SemaphoreSlim _throttle;
+        private readonly int _maxDecompositionDepth;
+        private int _processorStarted = 0;
 
-        public ResearchOrchestrator(Kernel kernel, int maxConcurrency = 5)
+        public ResearchOrchestrator(Kernel kernel, int maxConcurrency = 5, int maxDecompositionDepth = 2)
         {
             _kernel = kernel;
             _throttle = new SemaphoreSlim(maxConcurrency);
+            _maxDecompositionDepth = Math.Max(0, maxDecompositionDepth);
             InitializeAgents();
         }
 
@@ -488,28 +491,37 @@ Consider if it's focused, specific, and can be answered directly.";
             _taskRegistry[task.Id] = task;
 
             // Start processing if not already running
-            _ = Task.Run(() => ProcessTasksAsync());
+            if (Interlocked.Exchange(ref _processorStarted, 1) == 0)
+            {
+                _ = Task.Run(() => ProcessTasksAsync());
+            }
 
             return task.Id;
         }
 
         private async Task ProcessTasksAsync()
         {
-            while (_taskQueue.TryDequeue(out var task))
+            while (true)
             {
-                await _throttle.WaitAsync();
-
-                _ = Task.Run(async () =>
+                if (_taskQueue.TryDequeue(out var task))
                 {
-                    try
+                    await _throttle.WaitAsync();
+                    _ = Task.Run(async () =>
                     {
-                        await ProcessSingleTask(task);
-                    }
-                    finally
-                    {
-                        _throttle.Release();
-                    }
-                });
+                        try
+                        {
+                            await ProcessSingleTask(task);
+                        }
+                        finally
+                        {
+                            _throttle.Release();
+                        }
+                    });
+                }
+                else
+                {
+                    await Task.Delay(100);
+                }
             }
         }
 
@@ -531,30 +543,42 @@ Consider if it's focused, specific, and can be answered directly.";
                     return;
                 }
 
-                task.Status = TaskStatus.Analyzing;
-
-                // 1. Analyze for decomposition
-                var analyzerResponse = await _agents["analyzer"].ProcessAsync(task, _kernel);
-                if (analyzerResponse.Data is List<ResearchTask> subTasks)
+                // Respect max decomposition depth: skip analysis/merge if depth limit reached
+                var currentDepth = ComputeTaskDepth(task);
+                if (currentDepth < _maxDecompositionDepth)
                 {
-                    Console.WriteLine($"🧩 Decomposed into {subTasks.Count} subtasks");
-                    foreach (var subTask in subTasks)
+                    task.Status = TaskStatus.Analyzing;
+
+                    // 1. Analyze for decomposition
+                    var analyzerResponse = await _agents["analyzer"].ProcessAsync(task, _kernel);
+                    if (analyzerResponse.Data is List<ResearchTask> subTasks)
                     {
-                        subTask.ParentTaskId = task.Id;
-                        task.SubTaskIds.Add(subTask.Id);
-                        _taskQueue.Enqueue(subTask);
-                        _taskRegistry[subTask.Id] = subTask;
-                        Console.WriteLine($"  ↳ Enqueued subtask {subTask.Id}: {subTask.Description}");
+                        Console.WriteLine($"🧩 Decomposed into {subTasks.Count} subtasks (depth {currentDepth} → {currentDepth + 1})");
+                        foreach (var subTask in subTasks)
+                        {
+                            subTask.ParentTaskId = task.Id;
+                            task.SubTaskIds.Add(subTask.Id);
+                            _taskQueue.Enqueue(subTask);
+                            _taskRegistry[subTask.Id] = subTask;
+                            Console.WriteLine($"  ↳ Enqueued subtask {subTask.Id}: {subTask.Description}");
+                        }
+                        // Mark parent as awaiting children completion
+                        task.Status = TaskStatus.Pending;
+                        Console.WriteLine($"⏸️  Waiting for {subTasks.Count} subtasks to complete before aggregation");
+                        return;
                     }
-                    return;
-                }
 
-                // 2. Check for merge opportunities
-                var mergerResponse = await _agents["merger"].ProcessAsync(task, _kernel);
-                if (mergerResponse.Data is ResearchTask mergedTask)
+                    // 2. Check for merge opportunities
+                    var mergerResponse = await _agents["merger"].ProcessAsync(task, _kernel);
+                    if (mergerResponse.Data is ResearchTask mergedTask)
+                    {
+                        // Update task references
+                        task = mergedTask;
+                    }
+                }
+                else
                 {
-                    // Update task references
-                    task = mergedTask;
+                    Console.WriteLine($"🔚 Max decomposition depth {_maxDecompositionDepth} reached (current depth {currentDepth}). Executing directly.");
                 }
 
                 // 3. Execute if atomic
@@ -595,6 +619,18 @@ Consider if it's focused, specific, and can be answered directly.";
                 };
                 Console.WriteLine($"❌ Task {task.Id} failed: {ex.Message}");
             }
+        }
+
+        private int ComputeTaskDepth(ResearchTask task)
+        {
+            int depth = 0;
+            var current = task;
+            while (current.ParentTaskId.HasValue && _taskRegistry.TryGetValue(current.ParentTaskId.Value, out var parent))
+            {
+                depth++;
+                current = parent;
+            }
+            return depth;
         }
 
         private async Task CheckParentAggregation(Guid parentId)
@@ -742,13 +778,18 @@ Consider if it's focused, specific, and can be answered directly.";
                 var kernel = builder.Build();
                 Console.WriteLine("✅ Semantic Kernel configured successfully");
 
+                // Toggle prompt logging from configuration
+                var logPrompts = bool.TryParse(configuration["ResearchAgent:LogPrompts"], out var lp) && lp;
+                KernelExtensions.EnablePromptLogging = logPrompts;
+
                 // Get configuration values
                 var maxConcurrency = int.Parse(configuration["ResearchAgent:MaxConcurrency"] ?? "5");
                 var defaultPriority = int.Parse(configuration["ResearchAgent:DefaultPriority"] ?? "5");
+                var maxDepth = int.Parse(configuration["ResearchAgent:MaxDecompositionDepth"] ?? "2");
 
-                var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency);
+                var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth);
 
-                Console.WriteLine($"🚀 Research Agent Network initialized with max concurrency: {maxConcurrency}");
+                Console.WriteLine($"🚀 Research Agent Network initialized with max concurrency: {maxConcurrency}, max depth: {maxDepth}, log prompts: {logPrompts}");
                 Console.WriteLine();
 
                 // Submit a complex research task
