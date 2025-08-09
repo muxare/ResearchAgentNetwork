@@ -75,6 +75,23 @@ Ensure your response is valid JSON and matches the schema structure exactly. Do 
             }
             catch (JsonException ex)
             {
+                // Attempt a repair pass: escape raw newlines/tabs inside string literals
+                try
+                {
+                    var repaired = RepairInvalidStringLiterals(jsonResponse);
+                    var options = new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true,
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                    };
+                    var deserialized = JsonSerializer.Deserialize<T>(repaired, options);
+                    if (deserialized != null)
+                    {
+                        return deserialized;
+                    }
+                }
+                catch { }
+
                 throw new InvalidOperationException(
                     $"Failed to parse LLM response as JSON for type {typeof(T).Name}. " +
                     $"Response: {raw}. " +
@@ -189,6 +206,43 @@ Please ensure your response is valid JSON and try again.";
             throw new InvalidOperationException(
                 $"Failed to get structured output after {maxRetries} attempts. " +
                 $"Last error: {lastException?.Message}", lastException);
+        }
+
+        private static string RepairInvalidStringLiterals(string json)
+        {
+            // State machine to escape CR/LF and tabs inside JSON string literals
+            var sb = new System.Text.StringBuilder(json.Length + 64);
+            bool inString = false;
+            bool escapeNext = false;
+            for (int i = 0; i < json.Length; i++)
+            {
+                char c = json[i];
+                if (escapeNext)
+                {
+                    sb.Append(c);
+                    escapeNext = false;
+                    continue;
+                }
+                if (c == '\\')
+                {
+                    sb.Append(c);
+                    if (inString) escapeNext = true;
+                    continue;
+                }
+                if (c == '"')
+                {
+                    inString = !inString;
+                    sb.Append(c);
+                    continue;
+                }
+                if (inString)
+                {
+                    if (c == '\r' || c == '\n') { sb.Append("\\n"); continue; }
+                    if (c == '\t') { sb.Append("\\t"); continue; }
+                }
+                sb.Append(c);
+            }
+            return sb.ToString();
         }
     }
 

@@ -44,6 +44,16 @@ namespace ResearchAgentNetwork
         public bool RequiresAdditionalResearch { get; set; }
     }
 
+    public class TaskEvent
+    {
+        public Guid TaskId { get; set; }
+        public TaskStatus Status { get; set; }
+        public string EventType { get; set; } = string.Empty; // submitted, status, decomposed, aggregated, completed, failed
+        public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
+        public string? Message { get; set; }
+        public Guid? ParentTaskId { get; set; }
+    }
+
     public class ComplexityAnalysis
     {
         public bool RequiresDecomposition { get; set; }
@@ -196,6 +206,13 @@ Consider:
 
         public async Task<AgentResponse> ProcessAsync(ResearchTask task, Kernel kernel)
         {
+            // Force execute if orchestrator requested it (e.g., max depth reached)
+            if (task.Metadata.TryGetValue("ForceExecute", out var forceObj) && forceObj is bool force && force)
+            {
+                var forced = await ExecuteWithLLM(task, kernel);
+                return new AgentResponse { Success = true, Data = forced };
+            }
+
             // Check if task is atomic enough for LLM execution
             if (await IsAtomicTask(task, kernel))
             {
@@ -323,7 +340,8 @@ Consider if it's focused, specific, and can be answered directly.";
         {
             var subTaskResults = await GetSubTaskResults(task);
 
-            if (subTaskResults.All(r => r.Status == TaskStatus.Completed))
+            // Allow aggregation when all children have reached a terminal state (Completed or Failed)
+            if (subTaskResults.All(r => r.Status == TaskStatus.Completed || r.Status == TaskStatus.Failed))
             {
                 var aggregatedResult = await AggregateResults(subTaskResults, task, kernel);
                 return new AgentResponse
@@ -351,29 +369,45 @@ Consider if it's focused, specific, and can be answered directly.";
             ResearchTask parentTask,
             Kernel kernel)
         {
-            var synthesis = new StringBuilder();
-            synthesis.AppendLine($"# {parentTask.Description}");
+            var completed = subTasks
+                .Where(s => s.Status == TaskStatus.Completed && s.Result != null)
+                .ToList();
+            var failed = subTasks.Where(s => s.Status == TaskStatus.Failed).ToList();
 
-            foreach (var subTask in subTasks)
+            // Token-bounded child summaries (simple truncation)
+            string Summarize(ResearchTask t)
             {
-                synthesis.AppendLine($"\n## {subTask.Description}");
-                synthesis.AppendLine(subTask.Result?.Content ?? string.Empty);
+                var content = t.Result?.Content ?? string.Empty;
+                var max = 800; // characters
+                if (content.Length > max) content = content.Substring(0, max) + "...";
+                return $"- {t.Description}:\n{content}";
             }
 
-            // Use LLM to create coherent synthesis
-            var prompt = $@"Synthesize these research findings into a coherent report:
-                {synthesis}
-                
-                Create a comprehensive summary that addresses: {parentTask.Description}";
+            var summaryBlock = string.Join("\n\n", completed.Select(Summarize));
+            var failedBlock = failed.Any()
+                ? ("The following subtasks failed and should be treated cautiously in synthesis: " + string.Join(", ", failed.Select(f => f.Description)))
+                : "";
 
-            var result = await kernel.InvokePromptAsync(prompt);
-            var response = result.GetValue<string>() ?? string.Empty;
+            var prompt = $@"You will synthesize multiple child research findings into a coherent report.
+Parent task: {parentTask.Description}
+
+Child summaries:
+{summaryBlock}
+
+{failedBlock}
+
+Return a JSON object with fields: content (string, the final synthesized report) and sources (array of strings with URLs or citations, deduplicated).";
+
+            var structured = await kernel.WithStructuredOutputRetry<ExecutorAgent.ExecutorStructuredResult>(prompt);
+
+            var childSources = completed.SelectMany(t => t.Result?.Sources ?? new()).Distinct().ToList();
+            var sources = (structured.Sources != null && structured.Sources.Any()) ? structured.Sources : childSources;
 
             return new ResearchResult
             {
-                Content = response,
-                ConfidenceScore = CalculateAggregateConfidence(subTasks),
-                Sources = subTasks.SelectMany(t => t.Result?.Sources ?? new()).Distinct().ToList()
+                Content = structured.Content ?? string.Empty,
+                ConfidenceScore = CalculateAggregateConfidence(completed),
+                Sources = sources
             };
         }
 
@@ -454,7 +488,7 @@ Consider if it's focused, specific, and can be answered directly.";
         private readonly Dictionary<string, IResearchAgent> _agents = new();
         private readonly Kernel _kernel;
         private readonly SemaphoreSlim _throttle;
-        private readonly int _maxDecompositionDepth;
+        private int _maxDecompositionDepth;
         private int _processorStarted = 0;
 
         public ResearchOrchestrator(Kernel kernel, int maxConcurrency = 5, int maxDecompositionDepth = 2)
@@ -463,6 +497,18 @@ Consider if it's focused, specific, and can be answered directly.";
             _throttle = new SemaphoreSlim(maxConcurrency);
             _maxDecompositionDepth = Math.Max(0, maxDecompositionDepth);
             InitializeAgents();
+        }
+
+        public event Action<TaskEvent>? TaskEventPublished;
+
+        private void Publish(TaskEvent e)
+        {
+            try { TaskEventPublished?.Invoke(e); } catch { /* swallow */ }
+        }
+
+        public void UpdateMaxDecompositionDepth(int maxDepth)
+        {
+            _maxDecompositionDepth = Math.Max(0, maxDepth);
         }
 
         private void InitializeAgents()
@@ -489,6 +535,7 @@ Consider if it's focused, specific, and can be answered directly.";
 
             _taskQueue.Enqueue(task);
             _taskRegistry[task.Id] = task;
+            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "submitted" });
 
             // Start processing if not already running
             if (Interlocked.Exchange(ref _processorStarted, 1) == 0)
@@ -529,6 +576,14 @@ Consider if it's focused, specific, and can be answered directly.";
         {
             try
             {
+                // Respect cancellation
+                if (task.Metadata.TryGetValue("Cancelled", out var c) && c is bool cval && cval)
+                {
+                    task.Status = TaskStatus.Failed;
+                    task.Result = new ResearchResult { Content = "Cancelled", ConfidenceScore = 0 };
+                    Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "failed", Message = "Cancelled" });
+                    return;
+                }
                 Console.WriteLine($"➡️  Processing task {task.Id} (priority {task.Priority}): {task.Description}");
                 if (task.Status == TaskStatus.Aggregating)
                 {
@@ -539,6 +594,7 @@ Consider if it's focused, specific, and can be answered directly.";
                         task.Result = aggResult;
                         task.Status = TaskStatus.Completed;
                         Console.WriteLine($"🧷 Aggregated {task.SubTaskIds.Count} subtasks for parent {task.Id}");
+                        Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "aggregated" });
                     }
                     return;
                 }
@@ -548,6 +604,7 @@ Consider if it's focused, specific, and can be answered directly.";
                 if (currentDepth < _maxDecompositionDepth)
                 {
                     task.Status = TaskStatus.Analyzing;
+                    Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "status" });
 
                     // 1. Analyze for decomposition
                     var analyzerResponse = await _agents["analyzer"].ProcessAsync(task, _kernel);
@@ -561,10 +618,12 @@ Consider if it's focused, specific, and can be answered directly.";
                             _taskQueue.Enqueue(subTask);
                             _taskRegistry[subTask.Id] = subTask;
                             Console.WriteLine($"  ↳ Enqueued subtask {subTask.Id}: {subTask.Description}");
+                            Publish(new TaskEvent { TaskId = subTask.Id, Status = subTask.Status, EventType = "submitted", ParentTaskId = task.Id });
                         }
                         // Mark parent as awaiting children completion
                         task.Status = TaskStatus.Pending;
                         Console.WriteLine($"⏸️  Waiting for {subTasks.Count} subtasks to complete before aggregation");
+                        Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "decomposed", Message = $"{subTasks.Count} subtasks" });
                         return;
                     }
 
@@ -579,16 +638,19 @@ Consider if it's focused, specific, and can be answered directly.";
                 else
                 {
                     Console.WriteLine($"🔚 Max decomposition depth {_maxDecompositionDepth} reached (current depth {currentDepth}). Executing directly.");
+                    task.Metadata["ForceExecute"] = true;
                 }
 
                 // 3. Execute if atomic
                 task.Status = TaskStatus.Executing;
+                Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "status" });
                 var executorResponse = await _agents["executor"].ProcessAsync(task, _kernel);
                 if (executorResponse.Success && executorResponse.Data is ResearchResult result)
                 {
                     task.Result = result;
                     task.Status = TaskStatus.Completed;
                     Console.WriteLine($"✅ Completed task {task.Id} with confidence {task.Result.ConfidenceScore:P1}");
+                    Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "completed" });
 
                     // 4. Check if parent needs aggregation
                     if (task.ParentTaskId.HasValue)
@@ -608,6 +670,38 @@ Consider if it's focused, specific, and can be answered directly.";
                         }
                     }
                 }
+                else
+                {
+                    // If executor declined due to non-atomic, fallback: try forced execution once
+                    var attempts = 0;
+                    if (task.Metadata.TryGetValue("ExecAttempts", out var att) && att is int a) attempts = a;
+                    task.Metadata["ExecAttempts"] = attempts + 1;
+
+                    if (currentDepth >= _maxDecompositionDepth || attempts >= 1)
+                    {
+                        Console.WriteLine($"⚙️ Forcing execution for task {task.Id} (attempt {attempts + 1}).");
+                        task.Metadata["ForceExecute"] = true;
+                        var forced = await _agents["executor"].ProcessAsync(task, _kernel);
+                        if (forced.Success && forced.Data is ResearchResult forcedResult)
+                        {
+                            task.Result = forcedResult;
+                            task.Status = TaskStatus.Completed;
+                            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "completed" });
+                        }
+                        else
+                        {
+                            task.Status = TaskStatus.Failed;
+                            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "failed", Message = "Forced execution failed" });
+                        }
+                    }
+                    else
+                    {
+                        // Re-analyze path
+                        task.Status = TaskStatus.Analyzing;
+                        Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "status" });
+                        _taskQueue.Enqueue(task);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -618,6 +712,7 @@ Consider if it's focused, specific, and can be answered directly.";
                     ConfidenceScore = 0
                 };
                 Console.WriteLine($"❌ Task {task.Id} failed: {ex.Message}");
+                Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "failed", Message = ex.Message });
             }
         }
 
@@ -645,12 +740,55 @@ Consider if it's focused, specific, and can be answered directly.";
                 {
                     parentTask.Status = TaskStatus.Aggregating;
                     _taskQueue.Enqueue(parentTask);
+                    Publish(new TaskEvent { TaskId = parentTask.Id, Status = parentTask.Status, EventType = "status" });
                 }
             }
         }
 
         // Progress/reporting helpers
         public IEnumerable<ResearchTask> GetAllTasks() => _taskRegistry.Values.ToList();
+
+        public List<ResearchTask> GetChildren(Guid taskId)
+        {
+            return _taskRegistry.Values.Where(t => t.ParentTaskId == taskId).ToList();
+        }
+
+        public bool CancelTask(Guid taskId)
+        {
+            if (_taskRegistry.TryGetValue(taskId, out var task))
+            {
+                task.Metadata["Cancelled"] = true;
+                return true;
+            }
+            return false;
+        }
+
+        public bool RetryTask(Guid taskId)
+        {
+            if (_taskRegistry.TryGetValue(taskId, out var task))
+            {
+                task.Status = TaskStatus.Pending;
+                task.Result = null;
+                task.Metadata.Remove("ExecAttempts");
+                task.Metadata.Remove("ForceExecute");
+                _taskQueue.Enqueue(task);
+                Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "status", Message = "Retry" });
+                return true;
+            }
+            return false;
+        }
+
+        public bool ForceExecute(Guid taskId)
+        {
+            if (_taskRegistry.TryGetValue(taskId, out var task))
+            {
+                task.Metadata["ForceExecute"] = true;
+                _taskQueue.Enqueue(task);
+                Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "status", Message = "ForceExecute" });
+                return true;
+            }
+            return false;
+        }
 
         public Dictionary<TaskStatus, int> GetProgressSummary()
         {
@@ -727,6 +865,9 @@ Consider if it's focused, specific, and can be answered directly.";
                     {
                         sb.AppendLine($"Confidence: {child.Result.ConfidenceScore:P1}");
                         sb.AppendLine($"Summary: {Truncate(child.Result.Content, 500)}");
+                        sb.AppendLine();
+                        sb.AppendLine("Raw Output:");
+                        sb.AppendLine(Truncate(child.Result.Content, 4000));
                     }
                     sb.AppendLine();
                 }
