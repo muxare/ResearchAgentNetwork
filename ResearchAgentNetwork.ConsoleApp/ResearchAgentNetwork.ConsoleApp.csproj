@@ -25,4 +25,9 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\ResearchAgentNetwork.Core\ResearchAgentNetwork.Core.csproj" />
+    <ProjectReference Include="..\ResearchAgentNetwork.Infrastructure\ResearchAgentNetwork.Infrastructure.csproj" />
+  </ItemGroup>
+
 </Project>
