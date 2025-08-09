@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using ResearchAgentNetwork.AIProviders;
 
@@ -8,6 +9,13 @@ namespace ResearchAgentNetwork
     {
         public static async Task Main()
         {
+            using var loggerFactory = LoggerFactory.Create(builder =>
+            {
+                builder.AddSimpleConsole(o => { o.SingleLine = false; o.TimestampFormat = "HH:mm:ss "; });
+                builder.SetMinimumLevel(LogLevel.Information);
+            });
+            var logger = loggerFactory.CreateLogger("App");
+
             Console.WriteLine("🔬 Research Agent Network");
             Console.WriteLine("=========================");
             Console.WriteLine();
@@ -33,6 +41,7 @@ namespace ResearchAgentNetwork
 
                 var logPrompts = bool.TryParse(configuration["ResearchAgent:LogPrompts"], out var lp) && lp;
                 KernelExtensions.EnablePromptLogging = logPrompts;
+                KernelExtensions.Logger = loggerFactory.CreateLogger("LLM");
 
                 var maxConcurrency = int.Parse(configuration["ResearchAgent:MaxConcurrency"] ?? "5");
                 var defaultPriority = int.Parse(configuration["ResearchAgent:DefaultPriority"] ?? "5");

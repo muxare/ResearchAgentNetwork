@@ -1,10 +1,15 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using ResearchAgentNetwork;
 using ResearchAgentNetwork.AIProviders;
 using KernelExtensionsApp = ResearchAgentNetwork.KernelExtensions;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Logging
+builder.Logging.ClearProviders();
+builder.Logging.AddSimpleConsole(o => { o.SingleLine = false; o.TimestampFormat = "HH:mm:ss "; });
 
 // Reuse configuration pattern
 builder.Configuration
@@ -23,6 +28,7 @@ var maxConcurrency = int.Parse(builder.Configuration["ResearchAgent:MaxConcurren
 var maxDepth = int.Parse(builder.Configuration["ResearchAgent:MaxDecompositionDepth"] ?? "2");
 var logPrompts = bool.TryParse(builder.Configuration["ResearchAgent:LogPrompts"], out var lp) && lp;
 KernelExtensionsApp.EnablePromptLogging = logPrompts;
+KernelExtensionsApp.Logger = builder.Services.BuildServiceProvider().GetRequiredService<ILoggerFactory>().CreateLogger("LLM");
 
 // Orchestrator singleton
 var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth);

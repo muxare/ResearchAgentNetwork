@@ -7,8 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ResearchAgentNetwork.Core\ResearchAgentNetwork.Core.csproj" />
     <ProjectReference Include="..\ResearchAgentNetwork.Infrastructure\ResearchAgentNetwork.Infrastructure.csproj" />
+    <ProjectReference Include="..\ResearchAgentNetwork.Persistence\ResearchAgentNetwork.Persistence.csproj" />
   </ItemGroup>
 
 </Project>

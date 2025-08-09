@@ -1,11 +1,13 @@
 using Microsoft.SemanticKernel;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace ResearchAgentNetwork
 {
     public static class KernelExtensions
     {
         public static bool EnablePromptLogging { get; set; } = false;
+        public static ILogger? Logger { get; set; }
         public static async Task<T> WithStructuredOutput<T>(this Kernel kernel, string prompt, KernelArguments? arguments = null, CancellationToken cancellationToken = default)
         {
             var jsonSchema = JsonStuff.GenerateJsonSchemaFromClass<T>();
@@ -19,9 +21,16 @@ Ensure your response is valid JSON and matches the schema structure exactly. Do 
 
             if (EnablePromptLogging)
             {
-                Console.WriteLine("——— LLM Prompt ———");
-                Console.WriteLine(enhancedPrompt);
-                Console.WriteLine("———————————————");
+                if (Logger != null)
+                {
+                    Logger.LogInformation("LLM Prompt:\n{Prompt}", enhancedPrompt);
+                }
+                else
+                {
+                    Console.WriteLine("——— LLM Prompt ———");
+                    Console.WriteLine(enhancedPrompt);
+                    Console.WriteLine("———————————————");
+                }
             }
 
             var result = await kernel.InvokePromptAsync(enhancedPrompt, arguments, cancellationToken: cancellationToken);
@@ -29,9 +38,16 @@ Ensure your response is valid JSON and matches the schema structure exactly. Do 
 
             if (EnablePromptLogging)
             {
-                Console.WriteLine("——— LLM Response ———");
-                Console.WriteLine(raw);
-                Console.WriteLine("———————————————");
+                if (Logger != null)
+                {
+                    Logger.LogInformation("LLM Response:\n{Response}", raw);
+                }
+                else
+                {
+                    Console.WriteLine("——— LLM Response ———");
+                    Console.WriteLine(raw);
+                    Console.WriteLine("———————————————");
+                }
             }
 
             var jsonResponse = ExtractJsonPayload(raw);
