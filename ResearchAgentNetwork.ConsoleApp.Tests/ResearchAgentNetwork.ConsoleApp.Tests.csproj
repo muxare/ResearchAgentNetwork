@@ -14,8 +14,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.0" />
-    <!-- <PackageReference Include="Microsoft.SemanticKernel" Version="1.61.0-alpha" />
-    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Ollama" Version="1.61.0-alpha" /> -->
     <PackageReference Include="Microsoft.SemanticKernel" Version="1.61.0" />
     <PackageReference Include="Microsoft.SemanticKernel.Connectors.Ollama" Version="1.61.0-alpha" />
     <PackageReference Include="Moq" Version="4.20.70" />
@@ -27,7 +25,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ResearchAgentNetwork.ConsoleApp\ResearchAgentNetwork.ConsoleApp.csproj" />
+    <ProjectReference Include="..\ResearchAgentNetwork.Core\ResearchAgentNetwork.Core.csproj" />
+    <ProjectReference Include="..\ResearchAgentNetwork.Infrastructure\ResearchAgentNetwork.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
