@@ -4,6 +4,8 @@ using Microsoft.SemanticKernel;
 using ResearchAgentNetwork;
 using ResearchAgentNetwork.AIProviders;
 using KernelExtensionsApp = ResearchAgentNetwork.KernelExtensions;
+using ResearchAgentNetwork.SemanticMemory;
+using ResearchAgentNetwork.Infrastructure.SemanticMemory;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,7 +33,17 @@ KernelExtensionsApp.EnablePromptLogging = logPrompts;
 KernelExtensionsApp.Logger = builder.Services.BuildServiceProvider().GetRequiredService<ILoggerFactory>().CreateLogger("LLM");
 
 // Orchestrator singleton
-var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth);
+// Optional semantic memory wiring (Phase 0 - in-memory)
+ISemanticMemoryService? memory = null;
+var vectorProvider = builder.Configuration["VectorDb:Provider"] ?? "None";
+if (!string.Equals(vectorProvider, "None", StringComparison.OrdinalIgnoreCase))
+{
+    var vectorStore = new InMemoryVectorStore();
+    var embeddingService = new EmbeddingService(kernel);
+    memory = new SemanticMemoryService(vectorStore, embeddingService);
+}
+
+var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth, memory);
 var appState = new AppState
 {
     MaxConcurrency = maxConcurrency,

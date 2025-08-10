@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using Microsoft.SemanticKernel;
+using ResearchAgentNetwork.SemanticMemory;
 
 namespace ResearchAgentNetwork;
 
@@ -10,13 +11,15 @@ public class ResearchOrchestrator
     private readonly ConcurrentDictionary<Guid, ResearchTask> _taskRegistry = new();
     private readonly Dictionary<string, IResearchAgent> _agents = new();
     private readonly Kernel _kernel;
+    private readonly ISemanticMemoryService? _memory;
     private readonly SemaphoreSlim _throttle;
     private int _maxDecompositionDepth;
     private int _processorStarted = 0;
 
-    public ResearchOrchestrator(Kernel kernel, int maxConcurrency = 5, int maxDecompositionDepth = 2)
+    public ResearchOrchestrator(Kernel kernel, int maxConcurrency = 5, int maxDecompositionDepth = 2, ISemanticMemoryService? memory = null)
     {
         _kernel = kernel;
+        _memory = memory;
         _throttle = new SemaphoreSlim(maxConcurrency);
         _maxDecompositionDepth = Math.Max(0, maxDecompositionDepth);
         InitializeAgents();
@@ -53,6 +56,12 @@ public class ResearchOrchestrator
         _taskQueue.Enqueue(task);
         _taskRegistry[task.Id] = task;
         Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "submitted" });
+
+        // Phase 0 hook: index task (optional)
+        if (_memory != null)
+        {
+            _ = Task.Run(() => _memory.IndexTaskAsync(task));
+        }
 
         if (Interlocked.Exchange(ref _processorStarted, 1) == 0)
         {
@@ -146,6 +155,20 @@ public class ResearchOrchestrator
 
             task.Status = TaskStatus.Executing;
             Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "status" });
+            // Phase 0 hook: retrieve prior context (optional)
+            if (_memory != null && !task.Metadata.ContainsKey("ForceExecute"))
+            {
+                try
+                {
+                    var ctx = await _memory.RetrieveSimilarResultsAsync(task.Description, topK: 3);
+                    if (ctx.Count > 0)
+                    {
+                        task.Metadata["RetrievedContext"] = ctx.Select(c => c.Payload ?? string.Empty).ToList();
+                    }
+                }
+                catch { }
+            }
+
             var executorResponse = await _agents["executor"].ProcessAsync(task, _kernel);
             if (executorResponse.Success && executorResponse.Data is ResearchResult result)
             {
@@ -153,6 +176,12 @@ public class ResearchOrchestrator
                 task.Status = TaskStatus.Completed;
                 Console.WriteLine($"✅ Completed task {task.Id} with confidence {task.Result.ConfidenceScore:P1}");
                 Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "completed" });
+
+                // Phase 0 hook: index result (optional)
+                if (_memory != null && task.Result != null)
+                {
+                    _ = Task.Run(() => _memory.IndexResultAsync(task, task.Result));
+                }
 
                 if (task.ParentTaskId.HasValue)
                 {

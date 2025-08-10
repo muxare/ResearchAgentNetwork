@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using ResearchAgentNetwork.SemanticMemory;
 using ResearchAgentNetwork.AIProviders;
 
 namespace ResearchAgentNetwork
@@ -47,7 +48,17 @@ namespace ResearchAgentNetwork
                 var defaultPriority = int.Parse(configuration["ResearchAgent:DefaultPriority"] ?? "5");
                 var maxDepth = int.Parse(configuration["ResearchAgent:MaxDecompositionDepth"] ?? "2");
 
-                var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth);
+                // Optional semantic memory wiring (Phase 0 - in-memory)
+                ISemanticMemoryService? memory = null;
+                var vectorProvider = configuration["VectorDb:Provider"] ?? "None";
+                if (!string.Equals(vectorProvider, "None", StringComparison.OrdinalIgnoreCase))
+                {
+                    var vectorStore = new ResearchAgentNetwork.Infrastructure.SemanticMemory.InMemoryVectorStore();
+                    var embeddingService = new ResearchAgentNetwork.Infrastructure.SemanticMemory.EmbeddingService(kernel);
+                    memory = new ResearchAgentNetwork.Infrastructure.SemanticMemory.SemanticMemoryService(vectorStore, embeddingService);
+                }
+
+                var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth, memory);
 
                 Console.WriteLine($"🚀 Research Agent Network initialized with max concurrency: {maxConcurrency}, max depth: {maxDepth}, log prompts: {logPrompts}");
                 Console.WriteLine();
