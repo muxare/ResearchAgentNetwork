@@ -25,29 +25,25 @@ public class QualityAssessmentAgent : IResearchAgent
 
     private async Task<List<ResearchTask>> GenerateFollowUpTasks(QualityAssessment assessment, ResearchTask task, Kernel kernel)
     {
-        var prompt = $@"Generate follow-up research tasks to address these gaps:
-                Original task: {task.Description}
-                Gaps identified: {string.Join(", ", assessment.Gaps)}
-                
-                Return JSON array of task descriptions.";
+        var prompt = $@"Generate follow-up research tasks to address these gaps.
+Original task: {task.Description}
+Gaps identified: {string.Join(", ", assessment.Gaps)}
 
-        var result = await kernel.InvokePromptAsync(prompt);
-        var jsonResult = result.GetValue<string>() ?? "[]";
-        var descriptions = JsonSerializer.Deserialize<List<string>>(jsonResult) ?? new List<string>();
+Return ONLY a valid JSON array of strings. No prose, no markdown, no HTML.";
+
+        var descriptions = await kernel.WithStructuredOutputRetry<List<string>>(prompt);
 
         return descriptions.Select(d => new ResearchTask { Description = d }).ToList();
     }
 
     private async Task<QualityAssessment> AssessResultQuality(ResearchResult result, ResearchTask task, Kernel kernel)
     {
-        var prompt = $@"Assess the quality of this research result:
-                Task: {task.Description}
-                Result: {result.Content}
-                
-                Return JSON: {{needsMoreResearch: bool, reasoning: string, gaps: string[]}}";
+        var prompt = $@"Assess the quality of this research result.
+Task: {task.Description}
+Result: {result.Content}
 
-        var result2 = await kernel.InvokePromptAsync(prompt);
-        var jsonResult = result2.GetValue<string>() ?? "{}";
-        return JsonSerializer.Deserialize<QualityAssessment>(jsonResult) ?? new QualityAssessment();
+Return ONLY valid JSON with fields: needsMoreResearch (bool), reasoning (string), gaps (string array). No prose, no markdown, no HTML.";
+
+        return await kernel.WithStructuredOutputRetry<QualityAssessment>(prompt);
     }
 }

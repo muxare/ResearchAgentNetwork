@@ -80,22 +80,43 @@ Ensure your response is valid JSON and matches the schema structure exactly. Do 
         private static string ExtractJsonPayload(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return "{}";
-            var first = text.TrimStart();
+            // Preprocess: strip code fences and common wrappers, normalize smart quotes, collapse triple quotes
+            var first = text.Trim();
+            if (first.StartsWith("```"))
+            {
+                // Remove leading/trailing code fences like ```json ... ```
+                var idx = first.IndexOf('\n');
+                if (idx > 0) first = first.Substring(idx + 1);
+                var end = first.LastIndexOf("```", StringComparison.Ordinal);
+                if (end > 0) first = first.Substring(0, end);
+            }
+            // Remove leading language hints like json\n
+            if (first.StartsWith("json", StringComparison.OrdinalIgnoreCase))
+            {
+                var idx2 = first.IndexOf('\n');
+                if (idx2 > 0) first = first.Substring(idx2 + 1);
+            }
+            // Normalize smart quotes
+            first = first.Replace('\u201c', '"').Replace('\u201d', '"').Replace('\u2018', '\'').Replace('\u2019', '\'');
+            // Replace triple quotes with a single quote to approximate JSON strings
+            first = first.Replace("\"\"\"", "\"");
+
+            if (string.IsNullOrWhiteSpace(first)) return "{}";
             if (first.StartsWith("[") || first.StartsWith("{")) return first;
-            int startArray = text.IndexOf('[');
-            int startObject = text.IndexOf('{');
+            int startArray = first.IndexOf('[');
+            int startObject = first.IndexOf('{');
             int start = -1; char open = '\0'; char close = '\0';
             if (startArray >= 0 && (startObject < 0 || startArray < startObject)) { start = startArray; open = '['; close = ']'; }
             else if (startObject >= 0) { start = startObject; open = '{'; close = '}'; }
             if (start < 0) return text;
             int depth = 0;
-            for (int i = start; i < text.Length; i++)
+            for (int i = start; i < first.Length; i++)
             {
-                if (text[i] == open) depth++;
-                else if (text[i] == close) depth--;
-                if (depth == 0 && i > start) return text.Substring(start, i - start + 1);
+                if (first[i] == open) depth++;
+                else if (first[i] == close) depth--;
+                if (depth == 0 && i > start) return first.Substring(start, i - start + 1);
             }
-            return text.Substring(start);
+            return first.Substring(start);
         }
 
         public static async Task<StructuredOutputResult<T>> WithStructuredOutputSafe<T>(this Kernel kernel, string prompt, KernelArguments? arguments = null, CancellationToken cancellationToken = default)

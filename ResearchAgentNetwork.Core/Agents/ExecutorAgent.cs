@@ -31,7 +31,7 @@ Topic: {task.Description}
 
 Context: {context}
 
-Return fields for content (string) and sources (array of strings with URLs or citations).";
+Return ONLY valid JSON with fields content (string) and sources (array of strings). No prose, no markdown, no HTML. Escape newlines in content as \\n.";
 
         var structured = await kernel.WithStructuredOutputRetry<ExecutorStructuredResult>(prompt);
 
