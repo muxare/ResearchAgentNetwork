@@ -6,6 +6,8 @@ using ResearchAgentNetwork.AIProviders;
 using KernelExtensionsApp = ResearchAgentNetwork.KernelExtensions;
 using ResearchAgentNetwork.SemanticMemory;
 using ResearchAgentNetwork.Infrastructure.SemanticMemory;
+using Microsoft.SemanticKernel.Connectors.Qdrant;
+using Qdrant.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,9 +40,22 @@ ISemanticMemoryService? memory = null;
 var vectorProvider = builder.Configuration["VectorDb:Provider"] ?? "None";
 if (!string.Equals(vectorProvider, "None", StringComparison.OrdinalIgnoreCase))
 {
-    var vectorStore = new InMemoryVectorStore();
-    var embeddingService = new EmbeddingService(kernel);
-    memory = new SemanticMemoryService(vectorStore, embeddingService);
+    if (string.Equals(vectorProvider, "Qdrant", StringComparison.OrdinalIgnoreCase))
+    {
+        var endpoint = builder.Configuration["VectorDb:Endpoint"] ?? "http://localhost:6333";
+        // Register Qdrant connector with DI via Kernel services
+        kernelBuilder.Services.AddSingleton(sp => new QdrantClient(endpoint));
+        kernelBuilder.Services.AddQdrantVectorStore();
+        var adapter = new QdrantVectorStoreAdapter(kernel, kernel.Services.GetRequiredService<QdrantClient>(), builder.Configuration["VectorDb:CollectionPrefix"] ?? "");
+        var embeddingService = new EmbeddingService(kernel);
+        memory = new SemanticMemoryService(adapter, embeddingService);
+    }
+    else
+    {
+        var vectorStore = new InMemoryVectorStore();
+        var embeddingService = new EmbeddingService(kernel);
+        memory = new SemanticMemoryService(vectorStore, embeddingService);
+    }
 }
 
 var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth, memory);

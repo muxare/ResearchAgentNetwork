@@ -3,6 +3,10 @@ using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using ResearchAgentNetwork.SemanticMemory;
 using ResearchAgentNetwork.AIProviders;
+using Microsoft.Extensions.DependencyInjection;
+using ResearchAgentNetwork.Infrastructure.SemanticMemory;
+using Microsoft.SemanticKernel.Connectors.Qdrant;
+using Qdrant.Client;
 
 namespace ResearchAgentNetwork
 {
@@ -53,9 +57,22 @@ namespace ResearchAgentNetwork
                 var vectorProvider = configuration["VectorDb:Provider"] ?? "None";
                 if (!string.Equals(vectorProvider, "None", StringComparison.OrdinalIgnoreCase))
                 {
-                    var vectorStore = new ResearchAgentNetwork.Infrastructure.SemanticMemory.InMemoryVectorStore();
-                    var embeddingService = new ResearchAgentNetwork.Infrastructure.SemanticMemory.EmbeddingService(kernel);
-                    memory = new ResearchAgentNetwork.Infrastructure.SemanticMemory.SemanticMemoryService(vectorStore, embeddingService);
+                    if (string.Equals(vectorProvider, "Qdrant", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var endpoint = configuration["VectorDb:Endpoint"] ?? "http://localhost:6333";
+                        builder.Services.AddSingleton(sp => new QdrantClient(endpoint));
+                        builder.Services.AddQdrantVectorStore();
+                        var serviceProvider = builder.Services.BuildServiceProvider();
+                        var adapter = new QdrantVectorStoreAdapter(kernel, serviceProvider.GetRequiredService<QdrantClient>(), configuration["VectorDb:CollectionPrefix"] ?? "");
+                        var embeddingService = new EmbeddingService(kernel);
+                        memory = new SemanticMemoryService(adapter, embeddingService);
+                    }
+                    else
+                    {
+                        var vectorStore = new InMemoryVectorStore();
+                        var embeddingService = new EmbeddingService(kernel);
+                        memory = new SemanticMemoryService(vectorStore, embeddingService);
+                    }
                 }
 
                 var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth, memory);
