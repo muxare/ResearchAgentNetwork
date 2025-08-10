@@ -63,6 +63,18 @@ namespace ResearchAgentNetwork
                         builder.Services.AddSingleton(sp => new QdrantClient(endpoint));
                         builder.Services.AddQdrantVectorStore();
                         var serviceProvider = builder.Services.BuildServiceProvider();
+                        // Connectivity check
+                        try
+                        {
+                            var qc = serviceProvider.GetRequiredService<QdrantClient>();
+                            await qc.ListCollectionsAsync();
+                            Console.WriteLine("✅ Qdrant reachable at: " + endpoint);
+                        }
+                        catch (Exception qex)
+                        {
+                            Console.WriteLine("⚠️ Qdrant not reachable at: " + endpoint + ". Proceeding without vector memory. Error: " + qex.Message);
+                            // Leave memory = null to disable vector features
+                        }
                         var adapter = new QdrantVectorStoreAdapter(kernel, serviceProvider.GetRequiredService<QdrantClient>(), configuration["VectorDb:CollectionPrefix"] ?? "");
                         var embeddingService = new EmbeddingService(kernel);
                         memory = new SemanticMemoryService(adapter, embeddingService);

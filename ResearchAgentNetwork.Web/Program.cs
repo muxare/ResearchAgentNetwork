@@ -46,6 +46,17 @@ if (!string.Equals(vectorProvider, "None", StringComparison.OrdinalIgnoreCase))
         // Register Qdrant connector with DI via Kernel services
         kernelBuilder.Services.AddSingleton(sp => new QdrantClient(endpoint));
         kernelBuilder.Services.AddQdrantVectorStore();
+        // Connectivity check
+        try
+        {
+            var qc = kernel.Services.GetRequiredService<QdrantClient>();
+            await qc.ListCollectionsAsync();
+            Console.WriteLine($"✅ Qdrant reachable at: {endpoint}");
+        }
+        catch (Exception qex)
+        {
+            Console.WriteLine($"⚠️ Qdrant not reachable at: {endpoint}. Proceeding without vector memory. Error: {qex.Message}");
+        }
         var adapter = new QdrantVectorStoreAdapter(kernel, kernel.Services.GetRequiredService<QdrantClient>(), builder.Configuration["VectorDb:CollectionPrefix"] ?? "");
         var embeddingService = new EmbeddingService(kernel);
         memory = new SemanticMemoryService(adapter, embeddingService);

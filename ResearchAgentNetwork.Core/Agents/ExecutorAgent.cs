@@ -38,8 +38,9 @@ Return ONLY valid JSON with fields content (string) and sources (array of string
         var content = structured.Content ?? string.Empty;
         var sources = structured.Sources?.Where(s => !string.IsNullOrWhiteSpace(s)).ToList() ?? new List<string>();
 
-        var quality = await EvaluateQuality(content, kernel);
-        var completeness = await CheckCompleteness(content, task, kernel);
+        var sanitized = SanitizeContent(content);
+        var quality = await EvaluateQuality(sanitized, kernel);
+        var completeness = await CheckCompleteness(sanitized, task, kernel);
 
         task.Metadata["QualityScore"] = quality;
         task.Metadata["Completeness"] = new Completeness { NeedsMoreResearch = completeness, Reasoning = string.Empty };
@@ -102,6 +103,24 @@ Content:
 
         var completeness = await kernel.WithStructuredOutputRetry<Completeness>(prompt);
         return completeness.NeedsMoreResearch;
+    }
+
+    private static string SanitizeContent(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return string.Empty;
+        var text = content.Trim();
+        if (text.StartsWith("```"))
+        {
+            var idx = text.IndexOf('\n');
+            if (idx > 0) text = text.Substring(idx + 1);
+            var end = text.LastIndexOf("```", StringComparison.Ordinal);
+            if (end > 0) text = text.Substring(0, end);
+        }
+        // Remove basic HTML tags
+        text = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", string.Empty);
+        // Normalize newlines
+        text = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        return text;
     }
 
     private async Task<bool> IsAtomicTask(ResearchTask task, Kernel kernel)
