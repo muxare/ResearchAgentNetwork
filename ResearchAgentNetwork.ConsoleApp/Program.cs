@@ -48,8 +48,11 @@ namespace ResearchAgentNetwork
                 .AddEnvironmentVariables()
                 .Build();
 
-            // Prepare session logging directory and tee outputs
-            var sessionRoot = Path.Combine(AppContext.BaseDirectory, "SessionLogs");
+            // Prepare session logging directory (configurable)
+            var configuredLogsPath = configuration["Logging:SessionLogsPath"];
+            var sessionRoot = string.IsNullOrWhiteSpace(configuredLogsPath)
+                ? Path.Combine(Directory.GetCurrentDirectory(), "SessionLogs")
+                : configuredLogsPath;
             Directory.CreateDirectory(sessionRoot);
             var sessionId = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
             var sessionDir = Path.Combine(sessionRoot, sessionId);
@@ -110,6 +113,7 @@ namespace ResearchAgentNetwork
                 var maxConcurrency = int.Parse(configuration["ResearchAgent:MaxConcurrency"] ?? "5");
                 var defaultPriority = int.Parse(configuration["ResearchAgent:DefaultPriority"] ?? "5");
                 var maxDepth = int.Parse(configuration["ResearchAgent:MaxDecompositionDepth"] ?? "2");
+                var topK = int.Parse(configuration["VectorDb:TopK"] ?? "3");
                 PauseOnTaskEvents = bool.TryParse(configuration["ResearchAgent:PauseOnEvents"], out var pe) && pe;
 
                 // Optional semantic memory wiring (Phase 0 - in-memory)
@@ -138,7 +142,9 @@ namespace ResearchAgentNetwork
                             Console.WriteLine($"⚠️ Qdrant not reachable at: {qHost}:{qPort}. Proceeding without vector memory. Error: {qex.Message}");
                             // Leave memory = null to disable vector features
                         }
-                        var adapter = new QdrantVectorStoreAdapter(kernel, serviceProvider.GetRequiredService<QdrantClient>(), configuration["VectorDb:CollectionPrefix"] ?? "");
+                        var configuredPrefix = configuration["VectorDb:CollectionPrefix"] ?? "ran";
+                        var collectionPrefix = string.IsNullOrWhiteSpace(configuredPrefix) ? $"ran_{768}" : $"{configuredPrefix}_{768}";
+                        var adapter = new SkVectorStoreAdapter(kernel, serviceProvider.GetRequiredService<QdrantClient>(), collectionPrefix, vectorDimensions: 768);
                         var embeddingService = new EmbeddingService(kernel);
                         memory = new SemanticMemoryService(adapter, embeddingService);
                     }
@@ -150,7 +156,8 @@ namespace ResearchAgentNetwork
                     }
                 }
 
-                var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth, memory);
+                var maxRetry = int.Parse(configuration["ResearchAgent:MaxRetries"] ?? "1");
+                var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth, memory, retrievalTopK: topK, maxRetryAttempts: maxRetry);
 
                 // Subscribe to task events: write console snapshot and also persist to events.ndjson
                 using var eventsWriter = new StreamWriter(Path.Combine(sessionDir, "events.ndjson")) { AutoFlush = true };

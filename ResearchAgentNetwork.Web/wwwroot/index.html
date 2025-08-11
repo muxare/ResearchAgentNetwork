@@ -11,6 +11,12 @@
     table { border-collapse: collapse; width: 100%; margin-top: 12px; }
     th, td { border: 1px solid #ddd; padding: 8px; }
     th { background: #f4f4f4; }
+    tr.status-Pending { background: #f8f9fa; }
+    tr.status-Analyzing { background: #e7f1ff; }
+    tr.status-Executing { background: #efe7ff; }
+    tr.status-Aggregating { background: #fff3e0; }
+    tr.status-Completed { background: #e7f7ee; }
+    tr.status-Failed { background: #fdecea; }
     pre { white-space: pre-wrap; }
     .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
     .badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; color: #fff; }
@@ -101,6 +107,7 @@
       <div class="row" style="margin-top:8px;">
         <button id="copyReport" disabled>Copy Report</button>
         <button id="downloadReport" disabled>Download .md</button>
+        <button id="loadPersistedReport" disabled>Load Persisted Report</button>
         <button id="actRetry" disabled>Retry</button>
         <button id="actCancel" disabled>Cancel</button>
         <button id="actForce" disabled>Force Execute</button>
@@ -111,6 +118,12 @@
       <pre id="reportRaw" class="muted">Select a task to view its report…</pre>
       <h3 style="margin-top:16px;">Events</h3>
       <pre id="taskEvents" class="muted">Live events will appear here…</pre>
+      <h3 style="margin-top:16px;">Admin</h3>
+      <div class="row">
+        <button id="adminListTasks">List SQL Tasks</button>
+        <button id="adminListEvents">List SQL Events</button>
+      </div>
+      <pre id="adminOut" class="muted"></pre>
     </div>
   </section>
 

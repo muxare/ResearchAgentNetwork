@@ -8,8 +8,16 @@ using ResearchAgentNetwork.SemanticMemory;
 using ResearchAgentNetwork.Infrastructure.SemanticMemory;
 using Microsoft.SemanticKernel.Connectors.Qdrant;
 using Qdrant.Client;
+using Microsoft.EntityFrameworkCore;
+using ResearchAgentNetwork.Persistence;
+using ResearchAgentNetwork.Persistence.Entities;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+// Persistence
+var dbPath = Path.Combine(builder.Environment.ContentRootPath, "ran.db");
+builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlite($"Data Source={dbPath}"));
+Console.WriteLine($"📦 Sqlite DB path: {dbPath}");
 
 // Logging
 builder.Logging.ClearProviders();
@@ -20,35 +28,43 @@ builder.Configuration
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
     .AddEnvironmentVariables();
 
-// Build Kernel via provider
+// Build Kernel via provider (defer Build until after VectorDb DI wiring)
 var aiProvider = AIProviderFactory.CreateProvider(builder.Configuration);
 var kernelBuilder = Kernel.CreateBuilder();
 aiProvider.ConfigureKernel(kernelBuilder);
 aiProvider.ConfigureEmbeddings(kernelBuilder);
-var kernel = kernelBuilder.Build();
 
 // Settings
 var maxConcurrency = int.Parse(builder.Configuration["ResearchAgent:MaxConcurrency"] ?? "5");
 var maxDepth = int.Parse(builder.Configuration["ResearchAgent:MaxDecompositionDepth"] ?? "2");
 var logPrompts = bool.TryParse(builder.Configuration["ResearchAgent:LogPrompts"], out var lp) && lp;
 KernelExtensionsApp.EnablePromptLogging = logPrompts;
-KernelExtensionsApp.Logger = builder.Services.BuildServiceProvider().GetRequiredService<ILoggerFactory>().CreateLogger("LLM");
+// Serialize enums as strings for frontend rendering
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 
 // Orchestrator singleton
 // Optional semantic memory wiring (Phase 0 - in-memory)
 ISemanticMemoryService? memory = null;
 var vectorProvider = builder.Configuration["VectorDb:Provider"] ?? "None";
+bool useQdrant = string.Equals(vectorProvider, "Qdrant", StringComparison.OrdinalIgnoreCase);
+string endpoint = builder.Configuration["VectorDb:Endpoint"] ?? "localhost:6334";
+var (qHost, qPort) = ParseQdrantEndpoint(endpoint);
+if (useQdrant)
+{
+    Console.WriteLine($"Qdrant target: {qHost}:{qPort} (gRPC)");
+    kernelBuilder.Services.AddSingleton(sp => new QdrantClient(qHost, qPort));
+    kernelBuilder.Services.AddQdrantVectorStore();
+}
+
+var kernel = kernelBuilder.Build();
+
 if (!string.Equals(vectorProvider, "None", StringComparison.OrdinalIgnoreCase))
 {
-    if (string.Equals(vectorProvider, "Qdrant", StringComparison.OrdinalIgnoreCase))
+    if (useQdrant)
     {
-        var endpoint = builder.Configuration["VectorDb:Endpoint"] ?? "localhost:6334";
-        var (qHost, qPort) = ParseQdrantEndpoint(endpoint);
-        Console.WriteLine($"Qdrant target: {qHost}:{qPort} (gRPC)");
-        // Register Qdrant connector with DI via Kernel services
-        kernelBuilder.Services.AddSingleton(sp => new QdrantClient(qHost, qPort));
-        kernelBuilder.Services.AddQdrantVectorStore();
-        // Connectivity check
         try
         {
             var qc = kernel.Services.GetRequiredService<QdrantClient>();
@@ -59,7 +75,9 @@ if (!string.Equals(vectorProvider, "None", StringComparison.OrdinalIgnoreCase))
         {
             Console.WriteLine($"⚠️ Qdrant not reachable at: {qHost}:{qPort}. Proceeding without vector memory. Error: {qex.Message}");
         }
-        var adapter = new QdrantVectorStoreAdapter(kernel, kernel.Services.GetRequiredService<QdrantClient>(), builder.Configuration["VectorDb:CollectionPrefix"] ?? "");
+        var configuredPrefix = builder.Configuration["VectorDb:CollectionPrefix"] ?? "ran";
+        var collectionPrefix = string.IsNullOrWhiteSpace(configuredPrefix) ? $"ran_{768}" : $"{configuredPrefix}_{768}";
+        var adapter = new SkVectorStoreAdapter(kernel, kernel.Services.GetRequiredService<QdrantClient>(), collectionPrefix, vectorDimensions: 768);
         var embeddingService = new EmbeddingService(kernel);
         memory = new SemanticMemoryService(adapter, embeddingService);
     }
@@ -71,7 +89,19 @@ if (!string.Equals(vectorProvider, "None", StringComparison.OrdinalIgnoreCase))
     }
 }
 
-var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth, memory);
+var topK = int.Parse(builder.Configuration["VectorDb:TopK"] ?? "3");
+var maxRetry = int.Parse(builder.Configuration["ResearchAgent:MaxRetries"] ?? "1");
+var pendingMergeThreshold = double.TryParse(builder.Configuration["ResearchAgent:Merging:PendingThreshold"], out var pth) ? pth : 0.9;
+var completedReuseThreshold = double.TryParse(builder.Configuration["ResearchAgent:Merging:CompletedThreshold"], out var cth) ? cth : 0.95;
+var orchestrator = new ResearchOrchestrator(
+    kernel,
+    maxConcurrency,
+    maxDepth,
+    memory,
+    retrievalTopK: topK,
+    maxRetryAttempts: maxRetry,
+    pendingMergeThreshold: pendingMergeThreshold,
+    completedReuseThreshold: completedReuseThreshold);
 var appState = new AppState
 {
     MaxConcurrency = maxConcurrency,
@@ -98,15 +128,117 @@ orchestrator.TaskEventPublished += (e) =>
     }
 };
 
+// Persist events and final reports automatically
+orchestrator.TaskEventPublished += async (e) =>
+{
+    try
+    {
+        using var scope = builder.Services.BuildServiceProvider().CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        // Upsert task snapshot on event
+        var t = orchestrator.GetTaskStatus(e.TaskId);
+        if (t != null)
+        {
+            var te = await db.Tasks.FindAsync(t.Id);
+            if (te == null)
+            {
+                db.Tasks.Add(new TaskEntity
+                {
+                    Id = t.Id,
+                    Description = t.Description,
+                    Priority = t.Priority,
+                    Status = t.Status.ToString(),
+                    CreatedAtUtc = t.CreatedAt,
+                    UpdatedAtUtc = DateTime.UtcNow,
+                    ParentTaskId = t.ParentTaskId
+                });
+            }
+            else
+            {
+                te.Description = t.Description;
+                te.Priority = t.Priority;
+                te.Status = t.Status.ToString();
+                te.UpdatedAtUtc = DateTime.UtcNow;
+                te.ParentTaskId = t.ParentTaskId;
+            }
+        }
+        db.TaskEvents.Add(new TaskEventEntity
+        {
+            TaskId = e.TaskId,
+            EventType = e.EventType,
+            Status = e.Status.ToString(),
+            Message = e.Message,
+            TimestampUtc = e.TimestampUtc
+        });
+        await db.SaveChangesAsync();
+
+        if (e.EventType == "completed" || e.EventType == "failed")
+        {
+            var md = orchestrator.GenerateTaskReport(e.TaskId);
+            var existing = await db.TaskReports.FindAsync(e.TaskId);
+            if (existing == null)
+            {
+                db.TaskReports.Add(new TaskReportEntity { TaskId = e.TaskId, ReportMarkdown = md, GeneratedAtUtc = DateTime.UtcNow });
+            }
+            else
+            {
+                existing.ReportMarkdown = md;
+                existing.GeneratedAtUtc = DateTime.UtcNow;
+            }
+            await db.SaveChangesAsync();
+        }
+    }
+    catch { }
+};
+
 var app = builder.Build();
+// EF: apply migrations on startup (simple EnsureCreated for now)
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.EnsureCreated();
+}
+// Initialize LLM logger now that app services are available
+KernelExtensionsApp.Logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("LLM");
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+// DB info (debug)
+app.MapGet("/api/dbinfo", () => new { path = dbPath, exists = System.IO.File.Exists(dbPath) });
+
 // Submit task
-app.MapPost("/api/tasks", async (TaskSubmit req) =>
+app.MapPost("/api/tasks", async (TaskSubmit req, AppDbContext db) =>
 {
     var id = await orchestrator.SubmitResearchTask(req.Description, req.Priority ?? 5);
+    // Persist or update task row (basic fields)
+    var t = orchestrator.GetTaskStatus(id);
+    if (t != null)
+    {
+        var existing = await db.Tasks.FindAsync(id);
+        if (existing == null)
+        {
+            db.Tasks.Add(new TaskEntity
+            {
+                Id = t.Id,
+                Description = t.Description,
+                Priority = t.Priority,
+                Status = t.Status.ToString(),
+                CreatedAtUtc = t.CreatedAt,
+                UpdatedAtUtc = DateTime.UtcNow,
+                ParentTaskId = t.ParentTaskId
+            });
+        }
+        else
+        {
+            existing.Description = t.Description;
+            existing.Priority = t.Priority;
+            existing.Status = t.Status.ToString();
+            existing.UpdatedAtUtc = DateTime.UtcNow;
+            existing.ParentTaskId = t.ParentTaskId;
+        }
+        await db.SaveChangesAsync();
+    }
     return Results.Ok(new { id });
 });
 
@@ -116,6 +248,9 @@ app.MapGet("/api/tasks/{id:guid}", (Guid id) =>
     var task = orchestrator.GetTaskStatus(id);
     return task is null ? Results.NotFound() : Results.Ok(task);
 });
+
+// Debug endpoint to refresh a single task status (forces re-fetch from orchestrator only)
+app.MapPost("/api/tasks/{id:guid}/refresh", (Guid id) => Results.Ok(orchestrator.GetTaskStatus(id)));
 
 // All tasks (trimmed)
 app.MapGet("/api/tasks", () => orchestrator.GetAllTasks());
@@ -134,6 +269,73 @@ app.MapGet("/api/tasks/{id:guid}/report", (Guid id) =>
 {
     var report = orchestrator.GenerateTaskReport(id);
     return Results.Text(report, "text/plain");
+});
+
+// Persist report
+app.MapPost("/api/tasks/{id:guid}/report", async (Guid id, AppDbContext db) =>
+{
+    var md = orchestrator.GenerateTaskReport(id);
+    var existing = await db.TaskReports.FindAsync(id);
+    if (existing == null)
+    {
+        db.TaskReports.Add(new TaskReportEntity { TaskId = id, ReportMarkdown = md, GeneratedAtUtc = DateTime.UtcNow });
+    }
+    else
+    {
+        existing.ReportMarkdown = md;
+        existing.GeneratedAtUtc = DateTime.UtcNow;
+    }
+    await db.SaveChangesAsync();
+    return Results.Ok(new { id, saved = true });
+});
+
+// Get persisted report (latest)
+app.MapGet("/api/tasks/{id:guid}/report/persisted", async (Guid id, AppDbContext db) =>
+{
+    var r = await db.TaskReports.FindAsync(id);
+    if (r == null) return Results.NotFound();
+    return Results.Text(r.ReportMarkdown, "text/plain");
+});
+
+// Admin APIs
+app.MapGet("/admin/tasks", async (AppDbContext db, string? status, string? q, int? top, int? skip) =>
+{
+    var query = db.Tasks.AsQueryable();
+    if (!string.IsNullOrWhiteSpace(status)) query = query.Where(t => t.Status == status);
+    if (!string.IsNullOrWhiteSpace(q))
+    {
+        var term = q.ToLower();
+        query = query.Where(t => t.Description.ToLower().Contains(term) || t.Id.ToString().ToLower().Contains(term));
+    }
+    var take = Math.Clamp(top ?? 100, 1, 1000);
+    var sk = Math.Max(0, skip ?? 0);
+    var list = await query.OrderByDescending(t => t.CreatedAtUtc).Skip(sk).Take(take).ToListAsync();
+    return Results.Ok(list);
+});
+
+app.MapGet("/admin/events", async (AppDbContext db, Guid? taskId, int? top, int? skip) =>
+{
+    var query = db.TaskEvents.AsQueryable();
+    if (taskId.HasValue) query = query.Where(e => e.TaskId == taskId.Value);
+    var take = Math.Clamp(top ?? 200, 1, 5000);
+    var sk = Math.Max(0, skip ?? 0);
+    var list = await query.OrderByDescending(e => e.TimestampUtc).Skip(sk).Take(take).ToListAsync();
+    return Results.Ok(list);
+});
+
+app.MapGet("/admin/reports/{id:guid}.md", async (Guid id, AppDbContext db) =>
+{
+    var r = await db.TaskReports.FindAsync(id);
+    if (r == null) return Results.NotFound();
+    return Results.Text(r.ReportMarkdown, "text/markdown");
+});
+
+app.MapGet("/admin/reports/{id:guid}/download", async (Guid id, AppDbContext db) =>
+{
+    var r = await db.TaskReports.FindAsync(id);
+    if (r == null) return Results.NotFound();
+    var bytes = System.Text.Encoding.UTF8.GetBytes(r.ReportMarkdown);
+    return Results.File(bytes, "text/markdown", fileDownloadName: $"report-{id}.md");
 });
 
 // Simple SSE feed (poll-based publish of current status every 1s)

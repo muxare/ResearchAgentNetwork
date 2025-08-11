@@ -46,5 +46,6 @@ public interface ISemanticMemoryService
     Task IndexTaskAsync(ResearchTask task, CancellationToken cancellationToken = default);
     Task IndexResultAsync(ResearchTask task, ResearchResult result, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<VectorQueryResult>> RetrieveSimilarResultsAsync(string query, int topK = 5, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<VectorQueryResult>> RetrieveSimilarTasksAsync(string query, int topK = 5, CancellationToken cancellationToken = default);
 }
 

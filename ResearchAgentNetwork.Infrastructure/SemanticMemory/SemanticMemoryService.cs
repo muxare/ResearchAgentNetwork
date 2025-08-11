@@ -60,5 +60,13 @@ public class SemanticMemoryService : ISemanticMemoryService
         var results = await _vectorStore.QueryAsync(ResultsCollection, vector, topK, includePayload: true, cancellationToken: cancellationToken);
         return results;
     }
+
+    public async Task<IReadOnlyList<VectorQueryResult>> RetrieveSimilarTasksAsync(string query, int topK = 5, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return Array.Empty<VectorQueryResult>();
+        var vector = await _embeddingService.EmbedAsync(query, cancellationToken);
+        var results = await _vectorStore.QueryAsync(TasksCollection, vector, topK, includePayload: true, cancellationToken: cancellationToken);
+        return results;
+    }
 }
 

@@ -47,6 +47,7 @@ function renderTasks() {
   tbody.innerHTML = '';
   filtered.forEach(t => {
     const tr = document.createElement('tr');
+    tr.className = `status-${t.status}`;
     const cls = `badge ${t.status}`;
     const badge = `<span class="${cls}">${t.status}</span>`;
     const created = t.createdAt ? new Date(t.createdAt).toLocaleString() : '';
@@ -64,6 +65,7 @@ async function loadReport(id) {
   const details = document.getElementById('taskDetails');
   const copyBtn = document.getElementById('copyReport');
   const dlBtn = document.getElementById('downloadReport');
+  const persistedBtn = document.getElementById('loadPersistedReport');
   const task = cachedTasks.find(t => t.id === id);
   if (details && task) {
     details.innerHTML = `
@@ -95,6 +97,19 @@ async function loadReport(id) {
       URL.revokeObjectURL(url);
     };
   }
+  if (persistedBtn) {
+    persistedBtn.disabled = false;
+    persistedBtn.onclick = async () => {
+      try {
+        const res = await fetch(`/api/tasks/${id}/report/persisted`);
+        if (res.ok) {
+          const md = await res.text();
+          if (rawEl) rawEl.textContent = md;
+          if (htmlEl && window.marked) htmlEl.innerHTML = marked.parse(md);
+        }
+      } catch {}
+    };
+  }
 }
 
 async function loadSummary() {
@@ -119,12 +134,30 @@ function bindEvents() {
 
   document.getElementById('tasks').addEventListener('click', async (e) => {
     const btn = e.target.closest('button.view');
-    if (!btn) return;
-    const id = btn.getAttribute('data-id');
-    await loadReport(id);
-    // load children tree for this root
-    renderTree(id);
-    enableActions(id);
+    if (btn) {
+      const id = btn.getAttribute('data-id');
+      await loadReport(id);
+      renderTree(id);
+      enableActions(id);
+      return;
+    }
+    const retry = e.target.closest('#actRetry');
+    const cancel = e.target.closest('#actCancel');
+    const force = e.target.closest('#actForce');
+    if (retry || cancel || force) {
+      const details = document.getElementById('taskDetails');
+      const idLine = details?.querySelector('.muted')?.textContent || '';
+      const match = idLine?.match(/Id:\s*([0-9a-f\-]+)/i);
+      const id = match?.[1];
+      if (!id) return;
+      if (retry) await fetchJSON(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ action: 'retry' }) });
+      if (cancel) await fetchJSON(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ action: 'cancel' }) });
+      if (force) await fetchJSON(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ action: 'force' }) });
+      // refresh list and details after action
+      await loadTasks();
+      await loadReport(id);
+      renderTree(id);
+    }
   });
 
   const textEl = document.getElementById('filterText');
@@ -142,6 +175,17 @@ function bindEvents() {
       body: JSON.stringify({ maxDecompositionDepth: isNaN(maxDepth) ? undefined : maxDepth, logPrompts })
     });
   });
+  const adminTasks = document.getElementById('adminListTasks');
+  const adminEvents = document.getElementById('adminListEvents');
+  const adminOut = document.getElementById('adminOut');
+  if (adminTasks) adminTasks.addEventListener('click', async () => {
+    const data = await fetchJSON('/admin/tasks');
+    if (adminOut) adminOut.textContent = JSON.stringify(data, null, 2);
+  });
+  if (adminEvents) adminEvents.addEventListener('click', async () => {
+    const data = await fetchJSON('/admin/events');
+    if (adminOut) adminOut.textContent = JSON.stringify(data, null, 2);
+  });
 }
 
 async function enableActions(id) {
@@ -149,9 +193,9 @@ async function enableActions(id) {
   const cancel = document.getElementById('actCancel');
   const force = document.getElementById('actForce');
   for (const b of [retry, cancel, force]) if (b) b.disabled = false;
-  if (retry) retry.onclick = () => fetchJSON(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ action: 'retry' }) });
-  if (cancel) cancel.onclick = () => fetchJSON(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ action: 'cancel' }) });
-  if (force) force.onclick = () => fetchJSON(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ action: 'force' }) });
+  if (retry) retry.onclick = async () => { await fetchJSON(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ action: 'retry' }) }); await loadTasks(); await loadReport(id); renderTree(id); };
+  if (cancel) cancel.onclick = async () => { await fetchJSON(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ action: 'cancel' }) }); await loadTasks(); await loadReport(id); renderTree(id); };
+  if (force) force.onclick = async () => { await fetchJSON(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ action: 'force' }) }); await loadTasks(); await loadReport(id); renderTree(id); };
 }
 
 async function fetchChildren(id) {

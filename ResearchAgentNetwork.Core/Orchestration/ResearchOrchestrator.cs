@@ -15,13 +15,29 @@ public class ResearchOrchestrator
     private readonly SemaphoreSlim _throttle;
     private int _maxDecompositionDepth;
     private int _processorStarted = 0;
+    private readonly int _retrievalTopK;
+    private readonly int _maxRetryAttempts;
+    private readonly double _pendingMergeThreshold;
+    private readonly double _completedReuseThreshold;
 
-    public ResearchOrchestrator(Kernel kernel, int maxConcurrency = 5, int maxDecompositionDepth = 2, ISemanticMemoryService? memory = null)
+    public ResearchOrchestrator(
+        Kernel kernel,
+        int maxConcurrency = 5,
+        int maxDecompositionDepth = 2,
+        ISemanticMemoryService? memory = null,
+        int retrievalTopK = 3,
+        int maxRetryAttempts = 1,
+        double pendingMergeThreshold = 0.9,
+        double completedReuseThreshold = 0.95)
     {
         _kernel = kernel;
         _memory = memory;
         _throttle = new SemaphoreSlim(maxConcurrency);
         _maxDecompositionDepth = Math.Max(0, maxDecompositionDepth);
+        _retrievalTopK = Math.Max(1, retrievalTopK);
+        _maxRetryAttempts = Math.Max(0, maxRetryAttempts);
+        _pendingMergeThreshold = Math.Clamp(pendingMergeThreshold, 0.0, 1.0);
+        _completedReuseThreshold = Math.Clamp(completedReuseThreshold, 0.0, 1.0);
         InitializeAgents();
     }
 
@@ -52,6 +68,42 @@ public class ResearchOrchestrator
     public async Task<Guid> SubmitResearchTask(string description, int priority = 5)
     {
         var task = new ResearchTask { Description = description, Priority = priority };
+
+        // De-dup/merge: if memory available, check similar pending tasks; if found, merge or drop
+        if (_memory != null)
+        {
+            try
+            {
+                var similar = await _memory.RetrieveSimilarTasksAsync(description, topK: 3);
+                // Find any pending tasks with sufficient similarity
+                var pendingMatches = similar
+                    .Where(s => s.Score >= _pendingMergeThreshold)
+                    .Select(s => _taskRegistry.GetValueOrDefault(s.Id))
+                    .Where(t => t != null && t.Status == TaskStatus.Pending)
+                    .ToList();
+                if (pendingMatches.Any())
+                {
+                    var target = pendingMatches.First();
+                    // Merge intent: append note to target; drop new task
+                    target!.Description = target.Description + "\n(merged similar request) " + description;
+                    Publish(new TaskEvent { TaskId = target.Id, Status = target.Status, EventType = "merged", Message = "Merged duplicate" });
+                    return target.Id;
+                }
+
+                // If a completed task is very similar, avoid re-adding
+                var completedMatches = similar
+                    .Where(s => s.Score >= _completedReuseThreshold)
+                    .Select(s => _taskRegistry.GetValueOrDefault(s.Id))
+                    .Where(t => t != null && t.Status == TaskStatus.Completed)
+                    .ToList();
+                if (completedMatches.Any())
+                {
+                    // Return the existing completed task id
+                    return completedMatches.First()!.Id;
+                }
+            }
+            catch { }
+        }
 
         _taskQueue.Enqueue(task);
         _taskRegistry[task.Id] = task;
@@ -160,7 +212,7 @@ public class ResearchOrchestrator
             {
                 try
                 {
-                    var ctx = await _memory.RetrieveSimilarResultsAsync(task.Description, topK: 3);
+                    var ctx = await _memory.RetrieveSimilarResultsAsync(task.Description, topK: _retrievalTopK);
                     if (ctx.Count > 0)
                     {
                         task.Metadata["RetrievedContext"] = ctx.Select(c => c.Payload ?? string.Empty).ToList();
@@ -218,8 +270,21 @@ public class ResearchOrchestrator
                     }
                     else
                     {
-                        task.Status = TaskStatus.Failed;
-                        Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "failed", Message = "Forced execution failed" });
+                        // Decide on retry or final failure
+                        var totalAttempts = (int)task.Metadata["ExecAttempts"];
+                        if (totalAttempts <= _maxRetryAttempts)
+                        {
+                            Console.WriteLine($"🔁 Retrying task {task.Id} (attempt {totalAttempts}/{_maxRetryAttempts})");
+                            task.Status = TaskStatus.Pending;
+                            task.Metadata.Remove("ForceExecute");
+                            _taskQueue.Enqueue(task);
+                            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "retry" });
+                        }
+                        else
+                        {
+                            task.Status = TaskStatus.Failed;
+                            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "failed", Message = "Forced execution failed" });
+                        }
                     }
                 }
                 else
@@ -257,7 +322,18 @@ public class ResearchOrchestrator
         {
             var subTasks = _taskRegistry.Values.Where(t => t.ParentTaskId == parentId).ToList();
 
-            if (subTasks.All(t => t.Status == TaskStatus.Completed))
+            bool IsPermanentlyFailed(ResearchTask t)
+            {
+                if (t.Status != TaskStatus.Failed) return false;
+                if (t.Metadata.TryGetValue("ExecAttempts", out var att) && att is int a)
+                {
+                    return a > _maxRetryAttempts;
+                }
+                return false;
+            }
+
+            // Proceed to aggregation if all children are either completed or permanently failed
+            if (subTasks.All(t => t.Status == TaskStatus.Completed || IsPermanentlyFailed(t)))
             {
                 parentTask.Status = TaskStatus.Aggregating;
                 _taskQueue.Enqueue(parentTask);
