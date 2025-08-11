@@ -52,15 +52,37 @@ public class QdrantVectorStoreAdapter : IVectorStore
         var hits = await _client.SearchAsync(
             collectionName: Map(collection),
             vector: vector,
-            limit: (ulong)Math.Max(1, topK));
+            limit: (ulong)Math.Max(1, topK),
+            cancellationToken: cancellationToken);
 
         var results = new List<VectorQueryResult>();
         foreach (var sp in hits)
         {
+            Guid id = Guid.Empty;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(sp.Id?.Uuid) && Guid.TryParse(sp.Id.Uuid, out var gid))
+                {
+                    id = gid;
+                }
+            }
+            catch { }
+
+            string? payloadText = null;
+            try
+            {
+                // In the current client, Payload is a MapField<string, Value>
+                if (includePayload && sp.Payload != null && sp.Payload.TryGetValue("payload", out var val))
+                {
+                    payloadText = val.StringValue;
+                }
+            }
+            catch { }
+
             results.Add(new VectorQueryResult(
-                Id: Guid.Empty,
+                Id: id,
                 Score: sp.Score,
-                Payload: null,
+                Payload: payloadText,
                 Metadata: null));
         }
         return results;

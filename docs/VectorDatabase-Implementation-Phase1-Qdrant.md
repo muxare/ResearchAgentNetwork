@@ -15,7 +15,7 @@ Configuration
 {
   "VectorDb": {
     "Provider": "Qdrant",
-    "Endpoint": "http://localhost:6333",
+    "Endpoint": "localhost:6334",
     "CollectionPrefix": "ran",
     "TopK": 5
   }
@@ -26,6 +26,10 @@ Local setup
 ```bash
 docker compose up -d qdrant
 ```
+
+Notes
+- The application uses the Qdrant gRPC endpoint (port 6334) via `QdrantClient(host, port)`. If you supply an HTTP URL like `http://localhost:6333`, it will be normalized to `localhost:6334` under the hood.
+- `docker-compose.yml` exposes both HTTP 6333 and gRPC 6334; ensure 6334 is reachable for the client.
 
 References
 - Semantic Kernel overview: https://learn.microsoft.com/en-us/semantic-kernel/overview/

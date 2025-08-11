@@ -56,7 +56,19 @@ Return ONLY valid JSON with fields content (string) and sources (array of string
 
     private string BuildContext(ResearchTask task)
     {
-        return $"Research context for: {task.Description}";
+        var baseContext = $"Research context for: {task.Description}";
+        if (task.Metadata.TryGetValue("RetrievedContext", out var ctxObj) && ctxObj is List<string> snippets && snippets.Count > 0)
+        {
+            // Limit to top 3 snippets and cap total length to keep prompts bounded
+            var top = snippets.Where(s => !string.IsNullOrWhiteSpace(s)).Take(3).ToList();
+            var joined = string.Join("\n---\n", top);
+            if (joined.Length > 2000)
+            {
+                joined = joined.Substring(0, 2000);
+            }
+            return baseContext + "\n\nRetrieved Context:\n" + joined;
+        }
+        return baseContext;
     }
 
     private async Task<double> EvaluateQuality(string content, Kernel kernel)

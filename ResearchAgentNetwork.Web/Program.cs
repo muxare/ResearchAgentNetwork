@@ -42,20 +42,22 @@ if (!string.Equals(vectorProvider, "None", StringComparison.OrdinalIgnoreCase))
 {
     if (string.Equals(vectorProvider, "Qdrant", StringComparison.OrdinalIgnoreCase))
     {
-        var endpoint = builder.Configuration["VectorDb:Endpoint"] ?? "http://localhost:6333";
+        var endpoint = builder.Configuration["VectorDb:Endpoint"] ?? "localhost:6334";
+        var (qHost, qPort) = ParseQdrantEndpoint(endpoint);
+        Console.WriteLine($"Qdrant target: {qHost}:{qPort} (gRPC)");
         // Register Qdrant connector with DI via Kernel services
-        kernelBuilder.Services.AddSingleton(sp => new QdrantClient(endpoint));
+        kernelBuilder.Services.AddSingleton(sp => new QdrantClient(qHost, qPort));
         kernelBuilder.Services.AddQdrantVectorStore();
         // Connectivity check
         try
         {
             var qc = kernel.Services.GetRequiredService<QdrantClient>();
             await qc.ListCollectionsAsync();
-            Console.WriteLine($"✅ Qdrant reachable at: {endpoint}");
+            Console.WriteLine($"✅ Qdrant reachable at: {qHost}:{qPort}");
         }
         catch (Exception qex)
         {
-            Console.WriteLine($"⚠️ Qdrant not reachable at: {endpoint}. Proceeding without vector memory. Error: {qex.Message}");
+            Console.WriteLine($"⚠️ Qdrant not reachable at: {qHost}:{qPort}. Proceeding without vector memory. Error: {qex.Message}");
         }
         var adapter = new QdrantVectorStoreAdapter(kernel, kernel.Services.GetRequiredService<QdrantClient>(), builder.Configuration["VectorDb:CollectionPrefix"] ?? "");
         var embeddingService = new EmbeddingService(kernel);
@@ -193,6 +195,35 @@ app.MapMethods("/api/tasks/{id:guid}", new[] { "PATCH" }, (Guid id, TaskActionDt
 });
 
 app.Run();
+
+static (string host, int port) ParseQdrantEndpoint(string? endpoint)
+{
+    const int defaultGrpcPort = 6334;
+    if (string.IsNullOrWhiteSpace(endpoint)) return ("localhost", defaultGrpcPort);
+
+    if (Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
+    {
+        var host = string.IsNullOrWhiteSpace(uri.Host) ? "localhost" : uri.Host;
+        var port = uri.Port > 0 ? uri.Port : defaultGrpcPort;
+        if (port == 6333) port = defaultGrpcPort;
+        return (host, port);
+    }
+
+    var raw = endpoint.Trim();
+    var idx = raw.LastIndexOf(':');
+    if (idx > 0 && idx < raw.Length - 1 && !raw.Contains("\\"))
+    {
+        var hostPart = raw.Substring(0, idx);
+        var portPart = raw.Substring(idx + 1);
+        if (int.TryParse(portPart, out var p))
+        {
+            if (p == 6333) p = defaultGrpcPort;
+            return (string.IsNullOrWhiteSpace(hostPart) ? "localhost" : hostPart, p);
+        }
+    }
+
+    return (raw, defaultGrpcPort);
+}
 
 public record TaskSubmit(string Description, int? Priority);
 public record SettingsDto(int? MaxDecompositionDepth, bool? LogPrompts);

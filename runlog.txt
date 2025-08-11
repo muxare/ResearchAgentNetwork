@@ -1,0 +1,216 @@
+­ƒö¼ Research Agent Network
+=========================
+
+­ƒöº Initializing AI Provider...
+Ô£à Using AI Provider: Ollama
+­ƒöº Configuring Semantic Kernel...
+´┐¢´┐¢ Configuring Ollama chat completion with model: llama3.1:latest
+´┐¢´┐¢ Configuring Ollama embeddings with model: llama3.1
+Ô£à Ollama embedding generator configured successfully
+Ô£à Semantic Kernel configured successfully
+Ô£à VectorDb:Provider: None
+­ƒÜÇ Research Agent Network initialized with max concurrency: 5, max depth: 2, log prompts: False
+
+­ƒôï Research task submitted with ID: 8e21fed3-e003-43ee-9891-e49c0022a61a
+ÔÅ│ Monitoring progress...
+
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Ô×í´©Å  Processing task 8e21fed3-e003-43ee-9891-e49c0022a61a (priority 5): Analyze the impact of quantum computing on cryptography, including current vulnerabilities, post-quantum algorithms, and migration strategies for enterprises
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Analyzing
+­ƒº® Decomposed into 4 subtasks (depth 0 ÔåÆ 1)
+  Ôå│ Enqueued subtask 18620867-bc6a-41d9-ab94-a704479d356b: Research current vulnerabilities in cryptographic algorithms due to quantum computing advancements
+  Ôå│ Enqueued subtask b259554a-fd38-4c1a-88b0-5b4db5c8bfec: Identify post-quantum algorithms that can replace existing cryptography protocols
+  Ôå│ Enqueued subtask 344413c3-8cd3-4d4f-b34e-c70354cbc8f9: Explore migration strategies for enterprises to transition from classical cryptography to post-quantum cryptography
+  Ôå│ Enqueued subtask 6f7d246b-470e-4857-bef4-3e76660353f4: Investigate potential impacts on key exchange and digital signatures
+ÔÅ©´©Å  Waiting for 4 subtasks to complete before aggregation
+Ô×í´©Å  Processing task 6f7d246b-470e-4857-bef4-3e76660353f4 (priority 0): Investigate potential impacts on key exchange and digital signatures
+Ô×í´©Å  Processing task 18620867-bc6a-41d9-ab94-a704479d356b (priority 0): Research current vulnerabilities in cryptographic algorithms due to quantum computing advancements
+Ô×í´©Å  Processing task b259554a-fd38-4c1a-88b0-5b4db5c8bfec (priority 0): Identify post-quantum algorithms that can replace existing cryptography protocols
+Ô×í´©Å  Processing task 344413c3-8cd3-4d4f-b34e-c70354cbc8f9 (priority 0): Explore migration strategies for enterprises to transition from classical cryptography to post-quantum cryptography
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Ô×í´©Å  Processing task 6f7d246b-470e-4857-bef4-3e76660353f4 (priority 0): Investigate potential impacts on key exchange and digital signatures
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Ô×í´©Å  Processing task 18620867-bc6a-41d9-ab94-a704479d356b (priority 0): Research current vulnerabilities in cryptographic algorithms due to quantum computing advancements
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Ô×í´©Å  Processing task 344413c3-8cd3-4d4f-b34e-c70354cbc8f9 (priority 0): Explore migration strategies for enterprises to transition from classical cryptography to post-quantum cryptography
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Ô×í´©Å  Processing task b259554a-fd38-4c1a-88b0-5b4db5c8bfec (priority 0): Identify post-quantum algorithms that can replace existing cryptography protocols
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+Task 8e21fed3-e003-43ee-9891-e49c0022a61a: Pending
+ÔÜÖ´©Å Forcing execution for task 6f7d246b-470e-4857-bef4-3e76660353f4 (attempt 2).
