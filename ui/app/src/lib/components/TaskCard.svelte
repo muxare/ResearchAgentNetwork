@@ -7,7 +7,10 @@
     priority?: number;
   }
 
-  let { task, onselect }: { task: TaskItem; onselect?: (detail: { id: string }) => void } = $props();
+  let { task, onselect }: { task: TaskItem & { flashUntil?: number }; onselect?: (detail: { id: string }) => void } = $props();
+  let now = $state(Date.now());
+  const tick = setInterval(() => { now = Date.now(); }, 250);
+  $effect(() => () => clearInterval(tick));
 
   const statusToColor: Record<string, string> = {
     Pending: 'bg-gray-500 text-white',
@@ -28,7 +31,7 @@
   }
 </script>
 
-<button type="button" class="w-full text-left p-2 rounded-lg border bg-white hover:shadow-md transition group text-xs"
+<button type="button" class={`w-full text-left p-2 rounded-lg border bg-white hover:shadow-md transition group text-xs ${task.flashUntil && task.flashUntil > now ? 'ring-2 ring-offset-1 ring-yellow-300' : ''}`}
   onclick={() => onselect?.({ id: task.id })}>
   <div class="flex items-center justify-between">
     <span class="text-[10px] text-gray-500 font-mono truncate max-w-[96px]">{task.id}</span>

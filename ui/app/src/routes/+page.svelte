@@ -5,15 +5,15 @@
   import SettingsPanel from '$lib/components/SettingsPanel.svelte';
   import StatusLegend from '$lib/components/StatusLegend.svelte';
   import NewTaskForm from '$lib/components/NewTaskForm.svelte';
+  import { serverEvents } from '$lib/stores/events';
+  import ActivityPanel from '$lib/components/ActivityPanel.svelte';
   type TaskItem = { id: string; description: string; status: string; createdAt?: string; priority?: number };
   let tasks = $state<TaskItem[]>([]);
   let filterText = $state('');
   let filterStatus = $state('');
   let selectedId = $state<string | null>(null);
-  let sse: EventSource | null = null;
-  let reconnectHandle: any = null;
-  let retryMs = 1000;
-  const maxRetryMs = 30000;
+  let connection = $state<'connecting' | 'connected' | 'reconnecting'>('connecting');
+  let reconnectInMs = $state<number | null>(null);
   let loading = $state(true);
   let error = $state('');
   async function refreshTasks() {
@@ -34,53 +34,37 @@
     return list.filter(t => (!filterStatus || t.status === filterStatus) && (!q || t.description.toLowerCase().includes(q) || (t.id ?? '').toLowerCase().includes(q)));
   }
 
-  function startSse() {
-    try {
-      sse = new EventSource('/api/events');
-      sse.onopen = () => {
-        // reset backoff on successful connect
-        retryMs = 1000;
-      };
-      sse.onmessage = (ev) => {
-        try {
-          const msg = JSON.parse(ev.data);
-          if (msg.type === 'task' && msg.TaskId) {
-            const id = (msg.TaskId + '').toLowerCase();
-            const idx = tasks.findIndex(t => (t.id + '').toLowerCase() === id);
-            if (idx >= 0) {
-              tasks[idx] = { ...tasks[idx], status: msg.Status } as TaskItem;
-              tasks = [...tasks];
-            } else {
-              // Unknown task (likely a new subtask) → fetch and append
-              fetch(`/api/tasks/${msg.TaskId}`)
-                .then(r => (r.ok ? r.json() : null))
-                .then((t) => {
-                  if (!t) return;
-                  const exists = tasks.some(x => (x.id + '').toLowerCase() === id);
-                  if (!exists) tasks = [...tasks, t];
-                })
-                .catch(() => {});
-            }
-          }
-        } catch {}
-      };
-      sse.onerror = () => {
-        try { sse?.close(); } catch {}
-        if (reconnectHandle) clearTimeout(reconnectHandle);
-        reconnectHandle = setTimeout(() => {
-          startSse();
-        }, retryMs);
-        retryMs = Math.min(retryMs * 2, maxRetryMs);
-      };
-    } catch {}
-  }
-
-  onMount(() => {
-    startSse();
-    return () => {
-      try { sse?.close(); } catch {}
-      if (reconnectHandle) clearTimeout(reconnectHandle);
-    };
+  // Subscribe to centralized server events
+  $effect(() => {
+    const unsub = serverEvents.subscribe((msg: any) => {
+      if (!msg) return;
+      if (msg.type === 'connection') {
+        connection = msg.state ?? 'connecting';
+        reconnectInMs = msg.state === 'reconnecting' ? (msg.retryMs ?? null) : null;
+        return;
+      }
+      if (msg.type === 'task' && msg.TaskId) {
+        const id = (msg.TaskId + '').toLowerCase();
+        const idx = tasks.findIndex(t => (t.id + '').toLowerCase() === id);
+        if (idx >= 0) {
+          const prev = tasks[idx];
+          const statusChanged = prev.status !== msg.Status;
+          const flashUntil = statusChanged ? Date.now() + 1500 : (prev as any).flashUntil;
+          tasks[idx] = { ...(prev as any), status: msg.Status, flashUntil } as any;
+          tasks = [...tasks];
+        } else {
+          fetch(`/api/tasks/${msg.TaskId}`)
+            .then(r => (r.ok ? r.json() : null))
+            .then((t) => {
+              if (!t) return;
+              const exists = tasks.some(x => (x.id + '').toLowerCase() === id);
+              if (!exists) tasks = [...tasks, t];
+            })
+            .catch(() => {});
+        }
+      }
+    });
+    return () => unsub();
   });
 
   // Periodic safety refresh to recover from missed events
@@ -99,6 +83,21 @@
   </div>
 
   <div class="mt-4 flex flex-col gap-4">
+    <div class="flex items-center gap-3 bg-white/80 border rounded-xl p-2 shadow-sm text-xs">
+      <div class={
+        connection === 'connected' ? 'px-2 py-0.5 rounded bg-green-50 text-green-700 border border-green-200' :
+        connection === 'reconnecting' ? 'px-2 py-0.5 rounded bg-yellow-50 text-yellow-700 border border-yellow-200' :
+        'px-2 py-0.5 rounded bg-gray-50 text-gray-700 border border-gray-200'
+      }>
+        {connection === 'reconnecting' ? `Reconnecting${reconnectInMs ? ` in ~${Math.round(reconnectInMs/1000)}s` : '…'}` : connection === 'connected' ? 'Connected' : 'Connecting…'}
+      </div>
+      <div class="text-gray-600">Counts:</div>
+      <div class="flex flex-wrap gap-1">
+        {#each ['Pending','Analyzing','Executing','Aggregating','Completed','Failed'] as s}
+          <span class="px-1 py-0.5 rounded border bg-gray-50 text-gray-700">{s}: {tasks.filter(t => t.status === s).length}</span>
+        {/each}
+      </div>
+    </div>
     <div class="flex items-end gap-3 bg-white/80 border rounded-xl p-3 shadow-sm">
       <label class="text-sm">
         <div class="text-xs text-gray-600">Filter</div>
@@ -131,7 +130,10 @@
         <KanbanBoard tasks={filtered(tasks)} loading={loading} onselect={({ id }) => (selectedId = id)} />
       </div>
       <div class="bg-white/80 border rounded-xl p-3 shadow-sm">
-        <TaskDetails taskId={selectedId} />
+        <TaskDetails taskId={selectedId} on:select={(e: CustomEvent<{ id: string }>) => (selectedId = e.detail.id)} />
+      </div>
+      <div class="bg-white/80 border rounded-xl p-3 shadow-sm">
+        <ActivityPanel selectedTaskId={selectedId} />
       </div>
     </div>
   </div>

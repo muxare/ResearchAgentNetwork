@@ -12,17 +12,26 @@ This UI uses Server-Sent Events (SSE) for near-real-time updates of task status 
   - If `TaskId` is unknown → fetch `/api/tasks/{id}` and append it (covers subtasks).
 - A periodic `refreshTasks()` runs every 20s to reconcile state in case of missed messages.
 - SSE has auto-reconnect with exponential backoff (1s → 30s).
+ - Connection state events are emitted (`{ type: 'connection', state: 'connected'|'reconnecting' }`) and shown in a small banner together with per-status counts.
 
 ### Files
 
+- `ui/app/src/lib/stores/events.ts`
+  - Owns the single `EventSource` to `/api/events` and exposes a readable `serverEvents` store.
+  - Handles reconnection with exponential backoff and ignores heartbeat comments.
 - `ui/app/src/routes/+page.svelte`
-  - `startSse()` handles `onopen`, `onmessage`, `onerror` with backoff reconnect.
-  - Unknown tasks trigger a fetch of `/api/tasks/{id}` and append.
+  - Subscribes to `serverEvents` to upsert tasks (update status or fetch-and-append unknown tasks).
   - A 20s `setInterval` calls `refreshTasks()` as a safety net.
+  - Displays a connection status indicator and live counts per status.
 - `ui/app/src/lib/components/KanbanBoard.svelte`
   - Reconciles local order when `tasks` change, preserving manual ordering across updates.
 - `ui/app/src/lib/components/TaskDetails.svelte`
-  - Keeps its own SSE for now (will be centralized in a later phase) to display per-task live log lines.
+  - Subscribes to `serverEvents` and appends human-readable log lines for the selected task.
+  - Shows parent/children relationships and emits a `select` event to navigate between tasks.
+ - `ui/app/src/lib/components/ActivityPanel.svelte`
+  - Displays a live stream of recent task events. Can filter by selected task.
+ - `ui/app/src/lib/components/TaskCard.svelte`
+  - Briefly highlights a card when its status changes.
 
 ### Architecture implications
 

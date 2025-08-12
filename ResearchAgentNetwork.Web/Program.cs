@@ -112,6 +112,19 @@ var appState = new AppState
 // Simple in-memory subscribers list for SSE
 var subscribers = new List<HttpResponse>();
 var sync = new object();
+var writeSemaphores = new Dictionary<HttpResponse, SemaphoreSlim>();
+SemaphoreSlim GetWriteSemaphore(HttpResponse r)
+{
+    lock (sync)
+    {
+        if (!writeSemaphores.TryGetValue(r, out var sem))
+        {
+            sem = new SemaphoreSlim(1, 1);
+            writeSemaphores[r] = sem;
+        }
+        return sem;
+    }
+}
 orchestrator.TaskEventPublished += (e) =>
 {
     string payload = System.Text.Json.JsonSerializer.Serialize(new { type = "task", e.TaskId, e.Status, e.EventType, e.ParentTaskId, e.Message, e.TimestampUtc });
@@ -119,12 +132,24 @@ orchestrator.TaskEventPublished += (e) =>
     lock (sync) { targets = subscribers.ToList(); }
     foreach (var resp in targets)
     {
-        try
+        _ = Task.Run(async () =>
         {
-            resp.WriteAsync($"data: {payload}\n\n").GetAwaiter().GetResult();
-            resp.Body.Flush();
-        }
-        catch { }
+            try
+            {
+                var sem = GetWriteSemaphore(resp);
+                await sem.WaitAsync();
+                try
+                {
+                    await resp.WriteAsync($"data: {payload}\n\n");
+                    await resp.Body.FlushAsync();
+                }
+                finally
+                {
+                    sem.Release();
+                }
+            }
+            catch { }
+        });
     }
 };
 
@@ -342,16 +367,52 @@ app.MapGet("/admin/reports/{id:guid}/download", async (Guid id, AppDbContext db)
 app.MapGet("/api/events", async (HttpContext context) =>
 {
     context.Response.Headers.Append("Content-Type", "text/event-stream");
+    context.Response.Headers.Append("Cache-Control", "no-cache");
+    context.Response.Headers.Append("Connection", "keep-alive");
+    context.Response.Headers.Append("X-Accel-Buffering", "no");
+
     lock (sync) { subscribers.Add(context.Response); }
+
     // Send initial progress snapshot
     var summary = orchestrator.GetProgressSummary();
     var init = System.Text.Json.JsonSerializer.Serialize(new { type = "progress", summary });
-    await context.Response.WriteAsync($"data: {init}\n\n");
-    await context.Response.Body.FlushAsync();
+    {
+        var sem = GetWriteSemaphore(context.Response);
+        await sem.WaitAsync(context.RequestAborted);
+        try
+        {
+            await context.Response.WriteAsync($"data: {init}\n\n", context.RequestAborted);
+            await context.Response.Body.FlushAsync(context.RequestAborted);
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
+    var ct = context.RequestAborted;
     try
     {
-        // Wait until client disconnects
-        await Task.Delay(Timeout.Infinite, context.RequestAborted);
+        // Heartbeat loop to keep the connection alive
+        while (!ct.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(20), ct);
+            try
+            {
+                var sem = GetWriteSemaphore(context.Response);
+                await sem.WaitAsync(ct);
+                try
+                {
+                    await context.Response.WriteAsync($": ping {DateTime.UtcNow:o}\n\n", ct);
+                    await context.Response.Body.FlushAsync(ct);
+                }
+                finally
+                {
+                    sem.Release();
+                }
+            }
+            catch { }
+        }
     }
     catch (TaskCanceledException)
     {
@@ -359,7 +420,15 @@ app.MapGet("/api/events", async (HttpContext context) =>
     }
     finally
     {
-        lock (sync) { subscribers.Remove(context.Response); }
+        lock (sync)
+        {
+            subscribers.Remove(context.Response);
+            if (writeSemaphores.TryGetValue(context.Response, out var sem))
+            {
+                writeSemaphores.Remove(context.Response);
+                sem.Dispose();
+            }
+        }
     }
 });
 

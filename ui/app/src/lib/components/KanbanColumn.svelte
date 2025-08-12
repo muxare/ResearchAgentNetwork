@@ -1,7 +1,7 @@
 <script lang="ts">
   import TaskCard from './TaskCard.svelte';
   import type { TaskItem } from './TaskCard.svelte';
-  import { dndzone, type DndEvent } from 'svelte-dnd-action';
+  import { dndzone } from 'svelte-dnd-action';
 
   let { title, tasks, loading, onselect, onreorder }: {
     title: string;
@@ -11,7 +11,7 @@
     onreorder?: (detail: { status: string; ids: string[] }) => void;
   } = $props();
 
-  function onFinalize(e: CustomEvent<DndEvent<TaskItem>>) {
+  function onFinalize(e: CustomEvent<{ items: TaskItem[] }>) {
     const ids = (e.detail.items as any[]).map((it: any) => it.id as string);
     onreorder?.({ status: title, ids });
   }
