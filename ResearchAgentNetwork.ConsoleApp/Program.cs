@@ -8,6 +8,8 @@ using ResearchAgentNetwork.Infrastructure.SemanticMemory;
 using Microsoft.SemanticKernel.Connectors.Qdrant;
 using Qdrant.Client;
 using System.Text;
+using ResearchAgentNetwork.WebSearch;
+using ResearchAgentNetwork.Infrastructure.WebSearch;
 
 namespace ResearchAgentNetwork
 {
@@ -157,7 +159,19 @@ namespace ResearchAgentNetwork
                 }
 
                 var maxRetry = int.Parse(configuration["ResearchAgent:MaxRetries"] ?? "1");
-                var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth, memory, retrievalTopK: topK, maxRetryAttempts: maxRetry);
+                var enableWebSearch = bool.TryParse(configuration["ResearchAgent:EnableWebSearch"], out var ews) && ews;
+                var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth, memory, retrievalTopK: topK, maxRetryAttempts: maxRetry, enableWebSearch: enableWebSearch);
+
+                if (enableWebSearch)
+                {
+                    var searchProvider = configuration["WebSearch:Provider"] ?? "None";
+                    IWebSearchService webSearchService = searchProvider.ToLower() switch
+                    {
+                        "tavily" => new SKTavilyWebSearchService(configuration["WebSearch:Tavily:ApiKey"] ?? string.Empty),
+                        _ => new NoOpWebSearchService()
+                    };
+                    orchestrator.SetWebSearchAgent(new WebSearchAgent(webSearchService, memory));
+                }
 
                 // Subscribe to task events: write console snapshot and also persist to events.ndjson
                 using var eventsWriter = new StreamWriter(Path.Combine(sessionDir, "events.ndjson")) { AutoFlush = true };

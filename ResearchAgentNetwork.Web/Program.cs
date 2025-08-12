@@ -12,6 +12,8 @@ using Microsoft.EntityFrameworkCore;
 using ResearchAgentNetwork.Persistence;
 using ResearchAgentNetwork.Persistence.Entities;
 using System.Text.Json.Serialization;
+using ResearchAgentNetwork.WebSearch;
+using ResearchAgentNetwork.Infrastructure.WebSearch;
 
 var builder = WebApplication.CreateBuilder(args);
 // Persistence
@@ -93,6 +95,7 @@ var topK = int.Parse(builder.Configuration["VectorDb:TopK"] ?? "3");
 var maxRetry = int.Parse(builder.Configuration["ResearchAgent:MaxRetries"] ?? "1");
 var pendingMergeThreshold = double.TryParse(builder.Configuration["ResearchAgent:Merging:PendingThreshold"], out var pth) ? pth : 0.9;
 var completedReuseThreshold = double.TryParse(builder.Configuration["ResearchAgent:Merging:CompletedThreshold"], out var cth) ? cth : 0.95;
+var enableWebSearch = bool.TryParse(builder.Configuration["ResearchAgent:EnableWebSearch"], out var ews) && ews;
 var orchestrator = new ResearchOrchestrator(
     kernel,
     maxConcurrency,
@@ -101,7 +104,8 @@ var orchestrator = new ResearchOrchestrator(
     retrievalTopK: topK,
     maxRetryAttempts: maxRetry,
     pendingMergeThreshold: pendingMergeThreshold,
-    completedReuseThreshold: completedReuseThreshold);
+    completedReuseThreshold: completedReuseThreshold,
+    enableWebSearch: enableWebSearch);
 var appState = new AppState
 {
     MaxConcurrency = maxConcurrency,
@@ -225,6 +229,20 @@ using (var scope = app.Services.CreateScope())
 }
 // Initialize LLM logger now that app services are available
 KernelExtensionsApp.Logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("LLM");
+
+// Configure Web Search provider and inject agent when enabled
+if (enableWebSearch)
+{
+    // Default to NoOp unless explicitly configured via settings
+    var searchProvider = builder.Configuration["WebSearch:Provider"] ?? "None";
+    IWebSearchService webSearchService = searchProvider.ToLower() switch
+    {
+        "tavily" => new SKTavilyWebSearchService(builder.Configuration["WebSearch:Tavily:ApiKey"] ?? string.Empty),
+        _ => new NoOpWebSearchService()
+    };
+    var webSearchAgent = new WebSearchAgent(webSearchService, memory);
+    orchestrator.SetWebSearchAgent(webSearchAgent);
+}
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

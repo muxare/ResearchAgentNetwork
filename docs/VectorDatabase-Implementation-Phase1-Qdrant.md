@@ -1,3 +1,35 @@
+## Vector Database — Phase 1: Qdrant (Active)
+
+This phase enables Qdrant-backed semantic memory in both Console and Web hosts.
+
+- Provider selection via `VectorDb:Provider=Qdrant` and `VectorDb:Endpoint` (defaults `localhost:6334` gRPC)
+- Collections are created using `SkVectorStoreAdapter` with fixed dimension 768
+- Hooks:
+  - On task submit → index task description
+  - Before execute → retrieve similar results for context
+  - On completion → index result content
+
+How to run locally
+
+1. Start Qdrant:
+```bash
+docker compose up -d qdrant
+```
+2. Set config:
+```bash
+setx VectorDb__Provider Qdrant
+setx VectorDb__Endpoint http://localhost:6334
+```
+3. Run Web:
+```bash
+dotnet run --project ResearchAgentNetwork.Web
+```
+
+Troubleshooting
+
+- If gRPC 6334 is not reachable, the app will continue without vector memory.
+- Change `VectorDb:CollectionPrefix` to isolate runs.
+
 ### Vector Database – Phase 1 (Qdrant Adapter)
 
 Scope

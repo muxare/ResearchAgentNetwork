@@ -12,6 +12,7 @@ public class ResearchOrchestrator
     private readonly Dictionary<string, IResearchAgent> _agents = new();
     private readonly Kernel _kernel;
     private readonly ISemanticMemoryService? _memory;
+    private readonly bool _enableWebSearch;
     private readonly SemaphoreSlim _throttle;
     private int _maxDecompositionDepth;
     private int _processorStarted = 0;
@@ -28,7 +29,8 @@ public class ResearchOrchestrator
         int retrievalTopK = 3,
         int maxRetryAttempts = 1,
         double pendingMergeThreshold = 0.9,
-        double completedReuseThreshold = 0.95)
+        double completedReuseThreshold = 0.95,
+        bool enableWebSearch = false)
     {
         _kernel = kernel;
         _memory = memory;
@@ -38,6 +40,7 @@ public class ResearchOrchestrator
         _maxRetryAttempts = Math.Max(0, maxRetryAttempts);
         _pendingMergeThreshold = Math.Clamp(pendingMergeThreshold, 0.0, 1.0);
         _completedReuseThreshold = Math.Clamp(completedReuseThreshold, 0.0, 1.0);
+        _enableWebSearch = enableWebSearch;
         InitializeAgents();
     }
 
@@ -63,6 +66,12 @@ public class ResearchOrchestrator
             return _taskRegistry.Values.Where(t => t.ParentTaskId == parentId).ToList();
         });
         _agents["assessor"] = new QualityAssessmentAgent();
+        // Web search is injected later via setter when service is available
+    }
+
+    public void SetWebSearchAgent(WebSearchAgent agent)
+    {
+        _agents["websearch"] = agent;
     }
 
     public async Task<Guid> SubmitResearchTask(string description, int priority = 5)
@@ -216,6 +225,20 @@ public class ResearchOrchestrator
                     if (ctx.Count > 0)
                     {
                         task.Metadata["RetrievedContext"] = ctx.Select(c => c.Payload ?? string.Empty).ToList();
+                    }
+                }
+                catch { }
+            }
+
+            // Optional web search enrichment under feature flag
+            if (_enableWebSearch && _agents.TryGetValue("websearch", out var webAgent))
+            {
+                try
+                {
+                    var webResp = await webAgent.ProcessAsync(task, _kernel);
+                    if (webResp.Success)
+                    {
+                        Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "ingested", Message = webResp.Message });
                     }
                 }
                 catch { }
