@@ -140,3 +140,34 @@ MigrationBackup/
 FodyWeavers.xsd
 
  
+# ------------------------------------------------------------
+# Node / SvelteKit (UI) specific ignores
+# ------------------------------------------------------------
+
+# Node dependencies
+**/node_modules/
+
+# Vite optimization cache
+**/node_modules/.vite/
+**/.vite/
+
+# SvelteKit build and temp dirs
+**/.svelte-kit/
+
+# Common JS build outputs (already have build/, keep explicit for clarity)
+ui/app/build/
+
+# Environment files in UI (root .env* already ignored, add explicit path)
+ui/app/.env
+ui/app/.env.*
+
+# Adapter/platform directories (when experimenting)
+ui/app/.vercel/
+ui/app/.netlify/
+
+# UI deployment artifacts copied into ASP.NET wwwroot via build-ui.ps1
+# Keep top-level wwwroot files, ignore versioned deployments like /v2, /v3, ...
+ResearchAgentNetwork.Web/wwwroot/v*/
+
+# If someone deploys SvelteKit to the root (BASE_PATH empty), ignore the generated asset folder
+ResearchAgentNetwork.Web/wwwroot/_app/

@@ -160,6 +160,34 @@ Each phase should be a separate PR (≤10 files, ≤300 LOC where feasible) with
 - Build: `pnpm build` (SvelteKit with adapter-static) outputs to `ui/build`; copy to `ResearchAgentNetwork.Web/wwwroot`
 - Optional CI step/script to clean and sync assets to `wwwroot`
 
+### Side-by-Side Rollout and Comparison
+
+Option 1: Single backend, two UIs, different base paths (recommended)
+
+- Keep `ResearchAgentNetwork.Web` as the single ASP.NET backend and legacy UI at `/`
+- Configure SvelteKit `paths.base = '/v2'` and export statically
+- Deploy SvelteKit build under `ResearchAgentNetwork.Web/wwwroot/v2/`
+- Result: legacy UI at `/`, new UI at `/v2` using the same APIs and SSE
+- Pros: no duplication of backend; easy to compare; simple hosting
+- Cons: Need to set SvelteKit base path; some absolute links need care
+
+Option 2: Separate static host project for the new UI
+
+- Create `ResearchAgentNetwork.Web.UIv2` (ASP.NET minimal project) serving only static files from its `wwwroot`
+- Point the new UI at the original API host via absolute URLs/proxy
+- Pros: hard separation for experiments; independent app pool/process
+- Cons: extra project to maintain; CORS/proxy config; duplicated hosting plumbing
+
+Folder structure proposal:
+
+- `ui/` (SvelteKit project)
+  - `src/` SvelteKit app
+  - `static/` public assets
+  - Builds to `ui/build`
+- Deploy:
+  - Option 1: copy `ui/build` → `ResearchAgentNetwork.Web/wwwroot/v2`
+  - Option 2: copy `ui/build` → `ResearchAgentNetwork.Web.UIv2/wwwroot`
+
 ### Risks and Mitigations
 
 - SSE scalability: keep per-client minimal processing; debounce store updates
@@ -171,6 +199,33 @@ Each phase should be a separate PR (≤10 files, ≤300 LOC where feasible) with
 
 - Any SSR requirements that would push us to a non-static adapter later?
 - Do we want swimlanes (by parent/priority) in v1 or later?
+
+### Framework Choice Rationale
+
+Why SvelteKit (+ Tailwind) fits this project now:
+
+- Static export fits our single-backend hosting: `adapter-static` drops into `ResearchAgentNetwork.Web/wwwroot` with zero infra changes
+- Lightweight runtime and straightforward reactivity reduce complexity for SSE-driven Kanban and real-time updates
+- Faster delivery velocity vs. React/Next due to less boilerplate and simpler state management
+- Smooth Tailwind integration for consistent theming and smaller component code
+- Clear migration path: we can switch adapters later to enable SSR if needed without a ground-up rewrite
+
+Alternatives considered:
+
+- Next.js (React): strongest ecosystem and hiring pool; larger bundles and more boilerplate for our use case
+- Nuxt (Vue): good DX and ecosystem; slightly heavier runtime and templating overhead vs Svelte
+- SolidStart: great performance; ecosystem smaller and fewer off-the-shelf UI/DnD libs
+- Astro (islands): excellent for content-first sites; adds complexity for app-like, SSE-heavy Kanban
+- Blazor: tight .NET alignment; less mature ecosystem for Kanban/DnD and often heavier client model
+- Qwik: extreme perf/resumability; unnecessary complexity for our requirements
+
+When to revisit the choice:
+
+- We need React-only libraries or enterprise UI kits that significantly cut build time
+- SEO/SSR requirements outgrow static export and we want server adapters or edge rendering
+- Team scale or contributor base strongly prefers React, changing maintenance trade-offs
+
+Decision: proceed with SvelteKit + Tailwind and `adapter-static` now; reassess if any of the above triggers occur.
 
 ### Decisions (2025-08-11)
 
