@@ -61,6 +61,8 @@ public class ResearchOrchestrator
         _agents["analyzer"] = new TaskAnalyzerAgent();
         _agents["merger"] = new TaskMergerAgent();
         _agents["executor"] = new ExecutorAgent();
+        _agents["retrieval_decision"] = new RetrievalDecisionAgent();
+        _agents["query_planner"] = new QueryPlannerAgent();
         _agents["aggregator"] = new AggregatorAgent((Guid parentId) =>
         {
             return _taskRegistry.Values.Where(t => t.ParentTaskId == parentId).ToList();
@@ -216,15 +218,45 @@ public class ResearchOrchestrator
 
             task.Status = TaskStatus.Executing;
             Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "status" });
-            // Phase 0 hook: retrieve prior context (optional)
+            // Retrieval decision + query planning + vector retrieval
             if (_memory != null && !task.Metadata.ContainsKey("ForceExecute"))
             {
                 try
                 {
-                    var ctx = await _memory.RetrieveSimilarResultsAsync(task.Description, topK: _retrievalTopK);
-                    if (ctx.Count > 0)
+                    // Decide if retrieval is needed
+                    var decisionResp = await _agents["retrieval_decision"].ProcessAsync(task, _kernel);
+                    bool requireRetrieval = true;
+                    var types = new List<string> { "vector" };
+                    if (decisionResp.Data is RetrievalDecisionAgent.RetrievalDecision dec)
                     {
-                        task.Metadata["RetrievedContext"] = ctx.Select(c => c.Payload ?? string.Empty).ToList();
+                        requireRetrieval = dec.RequireRetrieval;
+                        types = dec.RetrievalTypes.Count > 0 ? dec.RetrievalTypes : types;
+                    }
+
+                    if (requireRetrieval && types.Contains("vector"))
+                    {
+                        // Plan queries
+                        var planResp = await _agents["query_planner"].ProcessAsync(task, _kernel);
+                        var queries = new List<string> { task.Description };
+                        if (planResp.Data is QueryPlannerAgent.QueryPlan plan && plan.Queries.Count > 0)
+                        {
+                            queries = plan.Queries;
+                        }
+                        // Try vector retrieval using best query first
+                        var retrieved = new List<string>();
+                        foreach (var q in queries)
+                        {
+                            var ctx = await _memory.RetrieveSimilarResultsAsync(q, topK: _retrievalTopK);
+                            if (ctx.Count > 0)
+                            {
+                                retrieved.AddRange(ctx.Select(c => c.Payload ?? string.Empty));
+                            }
+                            if (retrieved.Count >= _retrievalTopK) break;
+                        }
+                        if (retrieved.Count > 0)
+                        {
+                            task.Metadata["RetrievedContext"] = retrieved.Take(_retrievalTopK).ToList();
+                        }
                     }
                 }
                 catch { }
