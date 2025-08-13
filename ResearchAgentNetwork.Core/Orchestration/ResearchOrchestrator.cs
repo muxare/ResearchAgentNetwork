@@ -303,6 +303,7 @@ public class ResearchOrchestrator
                     await CheckParentAggregation(task.ParentTaskId.Value);
                 }
 
+                // QA assessment and single refinement loop
                 var assessorResponse = await _agents["assessor"].ProcessAsync(task, _kernel);
                 if (assessorResponse.Data is List<ResearchTask> followUpTasks)
                 {
@@ -312,6 +313,50 @@ public class ResearchOrchestrator
                         _taskQueue.Enqueue(followUp);
                         _taskRegistry[followUp.Id] = followUp;
                     }
+                }
+                else if (task.Metadata.TryGetValue("QualityAssessment", out var qaObj) && qaObj is QualityAssessment qa && qa.NeedsMoreResearch)
+                {
+                    try
+                    {
+                        // Plan queries based on gaps
+                        var planResp = await _agents["query_planner"].ProcessAsync(task, _kernel);
+                        var queries = new List<string> { task.Description };
+                        if (planResp.Data is QueryPlannerAgent.QueryPlan plan && plan.Queries.Count > 0)
+                        {
+                            queries = plan.Queries;
+                        }
+                        // Retrieve extra memory context
+                        if (_memory != null)
+                        {
+                            var extra = new List<RetrievedItem>();
+                            foreach (var q in queries)
+                            {
+                                var ctx = await _memory.RetrieveSimilarResultsAsync(q, topK: _retrievalTopK);
+                                extra.AddRange(ctx.Select(c => new RetrievedItem(
+                                    Kind: "memory",
+                                    Snippet: c.Payload ?? string.Empty,
+                                    Title: null,
+                                    Url: null,
+                                    Score: c.Score,
+                                    ChunkIndex: c.Metadata != null && c.Metadata.TryGetValue("chunkIndex", out var ci) && ci is int cix ? cix : null,
+                                    TotalChunks: c.Metadata != null && c.Metadata.TryGetValue("totalChunks", out var tc) && tc is int tcx ? tcx : null
+                                )));
+                                if (extra.Count >= _retrievalTopK) break;
+                            }
+                            if (extra.Count > 0)
+                            {
+                                task.Metadata["RetrievedContext"] = extra.Take(_retrievalTopK).ToList();
+                            }
+                        }
+                        // Re-execute once with additional evidence
+                        var refine = await _agents["executor"].ProcessAsync(task, _kernel);
+                        if (refine.Success && refine.Data is ResearchResult improved)
+                        {
+                            task.Result = improved;
+                            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "refined" });
+                        }
+                    }
+                    catch { }
                 }
             }
             else
