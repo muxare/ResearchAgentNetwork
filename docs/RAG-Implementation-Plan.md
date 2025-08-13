@@ -144,9 +144,12 @@ PR5: Store decision policy
 - Tests: store/skip logic.
 
 PR6: Config and observability
-- New settings under `ResearchAgent:Rag` (e.g., `TopK`, thresholds, allowlists).
-- Emit `ingested`, `retrieved`, `refined` events with counts and sources.
-- UI: surface retrieval counts and citation presence.
+- New settings under `ResearchAgent:Rag` (e.g., thresholds, allowlists). Implemented:
+  - `ResearchAgent:Rag:StoreMinConfidence`
+  - `ResearchAgent:Rag:DuplicateThreshold`
+- Emit events:
+  - `retrieved` (memory hits count), `refined` (after QA improvement), `stored` (stored to memory), `skipped` (storage skipped)
+- UI: surface retrieval counts and citation presence (future work).
 
 ---
 

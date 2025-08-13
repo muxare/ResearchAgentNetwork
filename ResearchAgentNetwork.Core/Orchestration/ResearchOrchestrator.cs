@@ -20,6 +20,8 @@ public class ResearchOrchestrator
     private readonly int _maxRetryAttempts;
     private readonly double _pendingMergeThreshold;
     private readonly double _completedReuseThreshold;
+    private readonly double _storeMinConfidence = 0.6;
+    private readonly double _duplicateThreshold = 0.98;
 
     public ResearchOrchestrator(
         Kernel kernel,
@@ -30,7 +32,9 @@ public class ResearchOrchestrator
         int maxRetryAttempts = 1,
         double pendingMergeThreshold = 0.9,
         double completedReuseThreshold = 0.95,
-        bool enableWebSearch = false)
+        bool enableWebSearch = false,
+        double storeMinConfidence = 0.6,
+        double duplicateThreshold = 0.98)
     {
         _kernel = kernel;
         _memory = memory;
@@ -41,6 +45,8 @@ public class ResearchOrchestrator
         _pendingMergeThreshold = Math.Clamp(pendingMergeThreshold, 0.0, 1.0);
         _completedReuseThreshold = Math.Clamp(completedReuseThreshold, 0.0, 1.0);
         _enableWebSearch = enableWebSearch;
+        _storeMinConfidence = Math.Clamp(storeMinConfidence, 0.0, 1.0);
+        _duplicateThreshold = Math.Clamp(duplicateThreshold, 0.0, 1.0);
         InitializeAgents();
     }
 
@@ -264,6 +270,7 @@ public class ResearchOrchestrator
                         if (retrieved.Count > 0)
                         {
                             task.Metadata["RetrievedContext"] = retrieved.Take(_retrievalTopK).ToList();
+                            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "retrieved", Message = $"memory:{retrieved.Count}" });
                         }
                     }
                 }
@@ -427,19 +434,14 @@ public class ResearchOrchestrator
 
     private async Task<bool> ShouldStoreResultAsync(ResearchTask task, ResearchResult result)
     {
-        // Simple policy:
-        // - Must have minimum length
-        // - Confidence above threshold
-        // - Not a near-duplicate in memory
+        // Policy: min length, min confidence, not near-duplicate
         const int minLength = 400;
-        const double minConfidence = 0.6;
-        const double duplicateThreshold = 0.98; // cosine similarity proxy from vector store score scale
 
         if (string.IsNullOrWhiteSpace(result.Content) || result.Content.Length < minLength)
         {
             return false;
         }
-        if (result.ConfidenceScore < minConfidence)
+        if (result.ConfidenceScore < _storeMinConfidence)
         {
             return false;
         }
@@ -448,7 +450,7 @@ public class ResearchOrchestrator
             try
             {
                 var similar = await _memory.RetrieveSimilarResultsAsync(result.Content, topK: 3);
-                if (similar.Any(s => s.Score >= duplicateThreshold))
+                if (similar.Any(s => s.Score >= _duplicateThreshold))
                 {
                     return false;
                 }

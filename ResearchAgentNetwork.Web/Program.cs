@@ -96,6 +96,8 @@ var maxRetry = int.Parse(builder.Configuration["ResearchAgent:MaxRetries"] ?? "1
 var pendingMergeThreshold = double.TryParse(builder.Configuration["ResearchAgent:Merging:PendingThreshold"], out var pth) ? pth : 0.9;
 var completedReuseThreshold = double.TryParse(builder.Configuration["ResearchAgent:Merging:CompletedThreshold"], out var cth) ? cth : 0.95;
 var enableWebSearch = bool.TryParse(builder.Configuration["ResearchAgent:EnableWebSearch"], out var ews) && ews;
+var storeMinConfidence = double.TryParse(builder.Configuration["ResearchAgent:Rag:StoreMinConfidence"], out var smc) ? smc : 0.6;
+var duplicateThreshold = double.TryParse(builder.Configuration["ResearchAgent:Rag:DuplicateThreshold"], out var dth) ? dth : 0.98;
 var orchestrator = new ResearchOrchestrator(
     kernel,
     maxConcurrency,
@@ -105,7 +107,9 @@ var orchestrator = new ResearchOrchestrator(
     maxRetryAttempts: maxRetry,
     pendingMergeThreshold: pendingMergeThreshold,
     completedReuseThreshold: completedReuseThreshold,
-    enableWebSearch: enableWebSearch);
+    enableWebSearch: enableWebSearch,
+    storeMinConfidence: storeMinConfidence,
+    duplicateThreshold: duplicateThreshold);
 var appState = new AppState
 {
     MaxConcurrency = maxConcurrency,

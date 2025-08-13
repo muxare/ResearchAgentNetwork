@@ -160,7 +160,18 @@ namespace ResearchAgentNetwork
 
                 var maxRetry = int.Parse(configuration["ResearchAgent:MaxRetries"] ?? "1");
                 var enableWebSearch = bool.TryParse(configuration["ResearchAgent:EnableWebSearch"], out var ews) && ews;
-                var orchestrator = new ResearchOrchestrator(kernel, maxConcurrency, maxDepth, memory, retrievalTopK: topK, maxRetryAttempts: maxRetry, enableWebSearch: enableWebSearch);
+                var storeMinConfidence = double.TryParse(configuration["ResearchAgent:Rag:StoreMinConfidence"], out var smc) ? smc : 0.6;
+                var duplicateThreshold = double.TryParse(configuration["ResearchAgent:Rag:DuplicateThreshold"], out var dth) ? dth : 0.98;
+                var orchestrator = new ResearchOrchestrator(
+                    kernel,
+                    maxConcurrency,
+                    maxDepth,
+                    memory,
+                    retrievalTopK: topK,
+                    maxRetryAttempts: maxRetry,
+                    enableWebSearch: enableWebSearch,
+                    storeMinConfidence: storeMinConfidence,
+                    duplicateThreshold: duplicateThreshold);
 
                 if (enableWebSearch)
                 {
