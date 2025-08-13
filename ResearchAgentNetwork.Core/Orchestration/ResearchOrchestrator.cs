@@ -395,6 +395,10 @@ public class ResearchOrchestrator
                         task.Result = forcedResult;
                         task.Status = TaskStatus.Completed;
                         Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "completed" });
+                        if (task.ParentTaskId.HasValue)
+                        {
+                            await CheckParentAggregation(task.ParentTaskId.Value);
+                        }
                     }
                     else
                     {
@@ -412,6 +416,10 @@ public class ResearchOrchestrator
                         {
                             task.Status = TaskStatus.Failed;
                             Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "failed", Message = "Forced execution failed" });
+                            if (task.ParentTaskId.HasValue)
+                            {
+                                await CheckParentAggregation(task.ParentTaskId.Value);
+                            }
                         }
                     }
                 }

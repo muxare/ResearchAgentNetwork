@@ -32,7 +32,7 @@
 </script>
 
 <button type="button" class={`w-full text-left p-2 rounded-lg border bg-white hover:shadow-md transition group text-xs ${task.flashUntil && task.flashUntil > now ? 'ring-2 ring-offset-1 ring-yellow-300' : ''}`}
-  onclick={() => onselect?.({ id: task.id })}>
+onclick={() => onselect?.({ id: task.id })}>
   <div class="flex items-center justify-between">
     <span class="text-[10px] text-gray-500 font-mono truncate max-w-[96px]">{task.id}</span>
     <span class={`text-[10px] px-1 py-0.5 rounded-full shadow ${statusToColor[task.status] ?? 'bg-gray-400 text-white'}`}>{task.status}</span>

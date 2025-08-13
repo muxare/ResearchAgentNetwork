@@ -31,6 +31,13 @@
     } catch { showToast(`${kind} failed`, 'error'); }
   }
 
+  const STATUS_NAMES = ['Pending','Analyzing','Executing','Aggregating','Completed','Failed'] as const;
+  function toStatusName(val: any): string {
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number') return STATUS_NAMES[val] ?? 'Pending';
+    return 'Pending';
+  }
+
   async function load() {
     if (!taskId) return;
     loading = true; err = '';
@@ -40,7 +47,10 @@
         fetch(`/api/tasks/${taskId}/report`),
         fetch(`/api/tasks/${taskId}/children`)
       ]);
-      if (taskRes.ok) meta = await taskRes.json();
+      if (taskRes.ok) {
+        const raw = await taskRes.json();
+        meta = { ...raw, status: toStatusName(raw?.status) };
+      }
       const md = repRes.ok ? await repRes.text() : 'No report available';
       raw = md;
       html = await (marked.parse(md) as Promise<string> | string);

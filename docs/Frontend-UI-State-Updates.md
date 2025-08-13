@@ -32,6 +32,35 @@ This UI uses Server-Sent Events (SSE) for near-real-time updates of task status 
   - Displays a live stream of recent task events. Can filter by selected task.
  - `ui/app/src/lib/components/TaskCard.svelte`
   - Briefly highlights a card when its status changes.
+ 
+### Activity verification hints
+
+The Activity panel includes a guidance column that explains how to verify each event:
+
+- submitted: Open Task Details to track status
+- status → analyzing: Watch for decomposition or direct execution
+- status → executing: Wait for completed; then open report
+- status → aggregating: Open parent task; synthesized report incoming
+- decomposed: Open parent Task Details; verify subtasks listed
+- retrieved: Check message for retrieved count; expect richer report
+- ingested: Web results ingested; sources may appear in report
+- completed: Open Task Details → Report and Sources
+- failed: Open Task Details → consider Retry/Force Execute
+- aggregated: Open parent Task Details → synthesized report
+- stored: Stored in memory; future similar tasks may reuse
+- skipped: No storage; review report manually
+- refined: Report updated; refresh Task Details
+- retry: Re-queued; watch for status updates
+- merged: Check target task description for "(merged similar request)"
+
+Implemented via `getVerifyHint()` in `ui/app/src/lib/components/ActivityPanel.svelte` mapping `EventType` and `Status` to concise guidance.
+
+### How to test
+
+1. Start the backend and UI.
+2. Submit a task that decomposes and one that executes directly.
+3. Observe Activity panel entries; ensure the guidance column suggests relevant verification steps for each event.
+4. Open Task Details for the referenced task to validate the suggested action.
 
 ### Architecture implications
 

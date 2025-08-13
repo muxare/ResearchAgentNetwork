@@ -8,9 +8,16 @@
   const statuses = VALID_STATUSES as string[];
   let order = $state(loadOrder());
 
+  const STATUS_NAMES = ['Pending','Analyzing','Executing','Aggregating','Completed','Failed'] as const;
+  function toStatusName(val: any): string {
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number') return STATUS_NAMES[val] ?? 'Pending';
+    return 'Pending';
+  }
+
   function byStatus(status: string) {
     const key = normalizeStatus(status);
-    const list = tasks.map(t => ({ ...t, status: normalizeStatus(t.status) })).filter(t => t.status === key);
+    const list = tasks.map(t => ({ ...t, status: normalizeStatus(toStatusName((t as any).status)) })).filter(t => t.status === key);
     return orderTasksForStatus(key as any, list, order);
   }
 

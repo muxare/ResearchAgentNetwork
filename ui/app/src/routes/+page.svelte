@@ -36,6 +36,12 @@
 
   // Subscribe to centralized server events
   $effect(() => {
+    const STATUS_NAMES = ['Pending','Analyzing','Executing','Aggregating','Completed','Failed'] as const;
+    function toStatusName(val: any): string {
+      if (typeof val === 'string') return val;
+      if (typeof val === 'number') return STATUS_NAMES[val] ?? 'Pending';
+      return 'Pending';
+    }
     const unsub = serverEvents.subscribe((msg: any) => {
       if (!msg) return;
       if (msg.type === 'connection') {
@@ -48,9 +54,10 @@
         const idx = tasks.findIndex(t => (t.id + '').toLowerCase() === id);
         if (idx >= 0) {
           const prev = tasks[idx];
-          const statusChanged = prev.status !== msg.Status;
+          const nextStatus = toStatusName(msg.Status);
+          const statusChanged = prev.status !== nextStatus;
           const flashUntil = statusChanged ? Date.now() + 1500 : (prev as any).flashUntil;
-          tasks[idx] = { ...(prev as any), status: msg.Status, flashUntil } as any;
+          tasks[idx] = { ...(prev as any), status: nextStatus, flashUntil } as any;
           tasks = [...tasks];
         } else {
           fetch(`/api/tasks/${msg.TaskId}`)
