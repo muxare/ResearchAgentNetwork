@@ -292,10 +292,23 @@ public class ResearchOrchestrator
                 Console.WriteLine($"✅ Completed task {task.Id} with confidence {task.Result.ConfidenceScore:P1}");
                 Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "completed" });
 
-                // Phase 0 hook: index result (optional)
+                // Store decision policy: index only if worth keeping
                 if (_memory != null && task.Result != null)
                 {
-                    _ = Task.Run(() => _memory.IndexResultAsync(task, task.Result));
+                    try
+                    {
+                        var shouldStore = await ShouldStoreResultAsync(task, task.Result);
+                        if (shouldStore)
+                        {
+                            _ = Task.Run(() => _memory.IndexResultAsync(task, task.Result!));
+                            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "stored", Message = "Result stored in memory" });
+                        }
+                        else
+                        {
+                            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "skipped", Message = "Result storage skipped" });
+                        }
+                    }
+                    catch { }
                 }
 
                 if (task.ParentTaskId.HasValue)
@@ -410,6 +423,39 @@ public class ResearchOrchestrator
             Console.WriteLine($"❌ Task {task.Id} failed: {ex.Message}");
             Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "failed", Message = ex.Message });
         }
+    }
+
+    private async Task<bool> ShouldStoreResultAsync(ResearchTask task, ResearchResult result)
+    {
+        // Simple policy:
+        // - Must have minimum length
+        // - Confidence above threshold
+        // - Not a near-duplicate in memory
+        const int minLength = 400;
+        const double minConfidence = 0.6;
+        const double duplicateThreshold = 0.98; // cosine similarity proxy from vector store score scale
+
+        if (string.IsNullOrWhiteSpace(result.Content) || result.Content.Length < minLength)
+        {
+            return false;
+        }
+        if (result.ConfidenceScore < minConfidence)
+        {
+            return false;
+        }
+        if (_memory != null)
+        {
+            try
+            {
+                var similar = await _memory.RetrieveSimilarResultsAsync(result.Content, topK: 3);
+                if (similar.Any(s => s.Score >= duplicateThreshold))
+                {
+                    return false;
+                }
+            }
+            catch { }
+        }
+        return true;
     }
 
     private int ComputeTaskDepth(ResearchTask task)
