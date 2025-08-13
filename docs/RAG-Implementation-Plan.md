@@ -219,3 +219,29 @@ PR6: Config and observability
 
 This plan elevates RAG from opportunistic retrieval to a principled pipeline with: (1) retrieval decision, (2) query planning, (3) provenance-rich context, (4) QA-driven refinement, and (5) store policy. Changes are incremental, testable, and align with the system’s existing agent/orchestrator design.
 
+---
+
+## Nice-to-haves / Next Iteration
+
+1) UI improvements
+- Surface retrieval metrics and evidence presence in the Svelte UI (counts per task, icons for memory/web evidence).
+- Show citations in `TaskDetails` with links and confidence/score bars.
+- Expose RAG thresholds in runtime settings (store min confidence, duplicate threshold, TopK).
+
+2) Web search controls
+- Domain allowlist/denylist in config: `ResearchAgent:Rag:AllowDomains`, `DenyDomains`.
+- Per-domain weighting and freshness hints; pass to SK Tavily options when available.
+
+3) Summary indexing
+- Generate short auto-summaries of final results and index summaries alongside chunks for token-efficient retrieval.
+- Prefer summaries in prompts when context budget is tight.
+
+4) Testing & evaluation
+- Unit tests for decision heuristics and planner query quality.
+- Integration tests for QA-triggered refinement outcomes.
+- Offline eval: measure citation presence, answer quality deltas with/without refinement.
+
+5) Additional policies
+- Configurable maximum refinement attempts (default: 1).
+- Optional result cache policy (reuse when similarity and confidence exceed thresholds).
+
