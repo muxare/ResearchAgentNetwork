@@ -38,19 +38,28 @@ public class SemanticMemoryService : ISemanticMemoryService
     public async Task IndexResultAsync(ResearchTask task, ResearchResult result, CancellationToken cancellationToken = default)
     {
         if (result == null || string.IsNullOrWhiteSpace(result.Content)) return;
-        var vector = await _embeddingService.EmbedAsync(result.Content, cancellationToken);
-        var record = new VectorRecord
+        // Chunk long content to improve retrieval granularity
+        var chunks = Chunk(result.Content, maxChars: 1500, overlap: 150).ToList();
+        int total = chunks.Count;
+        for (int i = 0; i < total; i++)
         {
-            Id = task.Id,
-            Vector = vector,
-            Metadata = new Dictionary<string, object>
+            var chunkText = chunks[i];
+            var vec = await _embeddingService.EmbedAsync(chunkText, cancellationToken);
+            var rec = new VectorRecord
             {
-                ["createdAtUtc"] = DateTime.UtcNow,
-                ["confidence"] = result.ConfidenceScore
-            },
-            Payload = result.Content
-        };
-        await _vectorStore.UpsertAsync(ResultsCollection, record, cancellationToken);
+                Id = task.Id, // same task id; chunk metadata disambiguates
+                Vector = vec,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["createdAtUtc"] = DateTime.UtcNow,
+                    ["confidence"] = result.ConfidenceScore,
+                    ["chunkIndex"] = i,
+                    ["totalChunks"] = total,
+                },
+                Payload = chunkText
+            };
+            await _vectorStore.UpsertAsync(ResultsCollection, rec, cancellationToken);
+        }
     }
 
     public async Task<IReadOnlyList<VectorQueryResult>> RetrieveSimilarResultsAsync(string query, int topK = 5, CancellationToken cancellationToken = default)
@@ -67,6 +76,21 @@ public class SemanticMemoryService : ISemanticMemoryService
         var vector = await _embeddingService.EmbedAsync(query, cancellationToken);
         var results = await _vectorStore.QueryAsync(TasksCollection, vector, topK, includePayload: true, cancellationToken: cancellationToken);
         return results;
+    }
+    private static IEnumerable<string> Chunk(string text, int maxChars, int overlap)
+    {
+        if (string.IsNullOrEmpty(text)) yield break;
+        maxChars = Math.Max(300, maxChars);
+        overlap = Math.Clamp(overlap, 0, maxChars / 3);
+        int start = 0;
+        while (start < text.Length)
+        {
+            int len = Math.Min(maxChars, text.Length - start);
+            yield return text.Substring(start, len);
+            if (start + len >= text.Length) break;
+            start = start + len - overlap;
+            if (start < 0 || start >= text.Length) break;
+        }
     }
 }
 

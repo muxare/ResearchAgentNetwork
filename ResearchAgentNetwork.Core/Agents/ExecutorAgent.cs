@@ -57,16 +57,29 @@ Return ONLY valid JSON with fields content (string) and sources (array of string
     private string BuildContext(ResearchTask task)
     {
         var baseContext = $"Research context for: {task.Description}";
-        if (task.Metadata.TryGetValue("RetrievedContext", out var ctxObj) && ctxObj is List<string> snippets && snippets.Count > 0)
+        if (task.Metadata.TryGetValue("RetrievedContext", out var ctxObj))
         {
-            // Limit to top 3 snippets and cap total length to keep prompts bounded
-            var top = snippets.Where(s => !string.IsNullOrWhiteSpace(s)).Take(3).ToList();
-            var joined = string.Join("\n---\n", top);
-            if (joined.Length > 2000)
+            // Support both legacy List<string> and new List<RetrievedItem>
+            var sections = new List<string>();
+            if (ctxObj is List<RetrievedItem> items && items.Count > 0)
             {
-                joined = joined.Substring(0, 2000);
+                foreach (var it in items.Where(i => !string.IsNullOrWhiteSpace(i.Snippet)).Take(3))
+                {
+                    var header = it.Kind == "web" ? $"[WEB] {it.Title} ({it.Url})" : "[MEMORY]";
+                    var meta = it.Score.HasValue ? $" score={it.Score:0.000}" : string.Empty;
+                    sections.Add($"{header}{meta}\n{it.Snippet}");
+                }
             }
-            return baseContext + "\n\nRetrieved Context:\n" + joined;
+            else if (ctxObj is List<string> snippets && snippets.Count > 0)
+            {
+                sections.AddRange(snippets.Where(s => !string.IsNullOrWhiteSpace(s)).Take(3));
+            }
+            if (sections.Count > 0)
+            {
+                var joined = string.Join("\n---\n", sections);
+                if (joined.Length > 2000) joined = joined.Substring(0, 2000);
+                return baseContext + "\n\nRetrieved Context:\n" + joined;
+            }
         }
         return baseContext;
     }

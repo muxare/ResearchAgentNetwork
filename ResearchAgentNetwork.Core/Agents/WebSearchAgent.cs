@@ -33,14 +33,22 @@ public class WebSearchAgent : IResearchAgent
                 return new AgentResponse { Success = true, Message = "No results" };
             }
 
-            // Collect short snippets for execution context
-            var snippets = new List<string>();
+            // Collect items with provenance for execution context
+            var items = new List<RetrievedItem>();
             foreach (var r in results)
             {
                 var text = (r.Snippet ?? string.Empty).Trim();
                 if (!string.IsNullOrWhiteSpace(text))
                 {
-                    snippets.Add($"{r.Title}\n{r.Url}\n{text}");
+                    items.Add(new RetrievedItem(
+                        Kind: "web",
+                        Snippet: text,
+                        Title: r.Title,
+                        Url: r.Url,
+                        Score: null,
+                        ChunkIndex: null,
+                        TotalChunks: null
+                    ));
                 }
 
                 // Opportunistically index into vector memory if available
@@ -58,9 +66,9 @@ public class WebSearchAgent : IResearchAgent
                 }
             }
 
-            if (snippets.Count > 0)
+            if (items.Count > 0)
             {
-                task.Metadata["RetrievedContext"] = snippets;
+                task.Metadata["RetrievedContext"] = items;
             }
 
             return new AgentResponse { Success = true, Message = $"Fetched {results.Count} results", Data = results };

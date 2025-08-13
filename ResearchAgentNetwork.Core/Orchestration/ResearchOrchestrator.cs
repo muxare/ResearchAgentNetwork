@@ -243,13 +243,21 @@ public class ResearchOrchestrator
                             queries = plan.Queries;
                         }
                         // Try vector retrieval using best query first
-                        var retrieved = new List<string>();
+                        var retrieved = new List<RetrievedItem>();
                         foreach (var q in queries)
                         {
                             var ctx = await _memory.RetrieveSimilarResultsAsync(q, topK: _retrievalTopK);
                             if (ctx.Count > 0)
                             {
-                                retrieved.AddRange(ctx.Select(c => c.Payload ?? string.Empty));
+                                retrieved.AddRange(ctx.Select(c => new RetrievedItem(
+                                    Kind: "memory",
+                                    Snippet: c.Payload ?? string.Empty,
+                                    Title: null,
+                                    Url: null,
+                                    Score: c.Score,
+                                    ChunkIndex: c.Metadata != null && c.Metadata.TryGetValue("chunkIndex", out var ci) && ci is int cix ? cix : null,
+                                    TotalChunks: c.Metadata != null && c.Metadata.TryGetValue("totalChunks", out var tc) && tc is int tcx ? tcx : null
+                                )));
                             }
                             if (retrieved.Count >= _retrievalTopK) break;
                         }
