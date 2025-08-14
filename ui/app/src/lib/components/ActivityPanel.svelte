@@ -70,9 +70,8 @@
   });
 
   function filtered() {
-    if (!selectedTaskId) return items;
-    const id = String(selectedTaskId).toLowerCase();
-    return items.filter(i => i.taskId.toLowerCase() === id);
+    // Always show all activities; ignore selectedTaskId for filtering
+    return items;
   }
 </script>
 

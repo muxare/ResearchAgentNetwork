@@ -202,3 +202,12 @@ pwsh ./build-ui.ps1                 # builds with BasePath /v2 and copies to www
 pwsh ./build-ui.ps1 -BasePath /v3   # builds with BasePath /v3
 pwsh ./build-ui.ps1 -SkipInstall    # skips npm install step
 ```
+
+### Troubleshooting
+
+- Cannot find name `svelteHTML` in `.svelte` files
+  - Ensure TypeScript sees Svelte element types:
+    - In `ui/app/tsconfig.json` set: `"types": ["svelte", "svelte/elements"]`
+    - In `ui/app/src/app.d.ts` add: `/// <reference types="svelte" />` and `/// <reference types="svelte/elements" />`
+  - Generate `.svelte-kit` typings: run `npm run prepare` (or `npx svelte-kit sync`)
+  - Use a modern TypeScript (>= 5.4): `npm i -D typescript@latest` and re-run `npm run check`

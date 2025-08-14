@@ -22,6 +22,7 @@
   // centralized SSE via serverEvents store
   
   import { showToast } from '$lib/stores/toast';
+  let tab = $state<'overview' | 'report' | 'raw' | 'events'>('overview');
 
   async function action(kind: 'retry' | 'cancel' | 'force') {
     if (!taskId) return;
@@ -102,38 +103,49 @@
       <div class="text-xs text-gray-500">{meta.status} • prio {meta.priority}</div>
       <div class="text-xs text-gray-400">{meta.id}</div>
     </div>
-    <div class="mb-4 text-xs text-gray-600 flex flex-wrap gap-2">
-      {#if meta && (meta as any).parentTaskId}
-        <button type="button" class="px-2 py-0.5 rounded border bg-gray-50 hover:bg-gray-100" onclick={() => open((meta as any).parentTaskId)}>↑ Parent</button>
-      {/if}
-      {#if children.length > 0}
-        <span class="text-gray-500">Children:</span>
-        {#each children as c}
-          <button type="button" class="px-2 py-0.5 rounded border bg-gray-50 hover:bg-gray-100" onclick={() => open(c.id)}>{c.status}: {c.description}</button>
-        {/each}
-      {:else}
-        <span class="text-gray-400">No children</span>
-      {/if}
+    <div class="mb-3 border-b">
+      <nav class="flex gap-2 text-xs">
+        <button type="button" class={`px-2 py-1 ${tab==='overview' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-600'}`} onclick={() => (tab='overview')}>Overview</button>
+        <button type="button" class={`px-2 py-1 ${tab==='report' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-600'}`} onclick={() => (tab='report')}>Report</button>
+        <button type="button" class={`px-2 py-1 ${tab==='raw' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-600'}`} onclick={() => (tab='raw')}>Raw</button>
+        <button type="button" class={`px-2 py-1 ${tab==='events' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-600'}`} onclick={() => (tab='events')}>Events</button>
+      </nav>
     </div>
-    <div class="flex gap-2 mb-4">
-      <button type="button" class="px-2 py-1 rounded border text-xs bg-blue-50 hover:bg-blue-100" onclick={() => action('retry')}>Retry</button>
-      <button type="button" class="px-2 py-1 rounded border text-xs bg-orange-50 hover:bg-orange-100" onclick={() => action('cancel')}>Cancel</button>
-      <button type="button" class="px-2 py-1 rounded border text-xs bg-purple-50 hover:bg-purple-100" onclick={() => action('force')}>Force Execute</button>
-    </div>
+    {#if tab === 'overview'}
+      <div class="mb-4 text-xs text-gray-600 flex flex-wrap gap-2">
+        {#if meta && (meta as any).parentTaskId}
+          <button type="button" class="px-2 py-0.5 rounded border bg-gray-50 hover:bg-gray-100" onclick={() => open((meta as any).parentTaskId)}>↑ Parent</button>
+        {/if}
+        {#if children.length > 0}
+          <span class="text-gray-500">Children:</span>
+          {#each children as c}
+            <button type="button" class="px-2 py-0.5 rounded border bg-gray-50 hover:bg-gray-100" onclick={() => open(c.id)}>{c.status}: {c.description}</button>
+          {/each}
+        {:else}
+          <span class="text-gray-400">No children</span>
+        {/if}
+      </div>
+      <div class="flex gap-2 mb-4">
+        <button type="button" class="px-2 py-1 rounded border text-xs bg-blue-50 hover:bg-blue-100" onclick={() => action('retry')}>Retry</button>
+        <button type="button" class="px-2 py-1 rounded border text-xs bg-orange-50 hover:bg-orange-100" onclick={() => action('cancel')}>Cancel</button>
+        <button type="button" class="px-2 py-1 rounded border text-xs bg-purple-50 hover:bg-purple-100" onclick={() => action('force')}>Force Execute</button>
+      </div>
+    {:else if tab === 'report'}
+      <div>
+        <h3 class="text-sm font-semibold">Report (rendered)</h3>
+        <div class="prose max-w-none mt-2">{@html html}</div>
+      </div>
+    {:else if tab === 'raw'}
+      <div>
+        <h3 class="text-sm font-semibold">Report (raw)</h3>
+        <pre class="text-xs text-gray-600 mt-2 whitespace-pre-wrap">{raw}</pre>
+      </div>
+    {:else if tab === 'events'}
+      <div>
+        <h3 class="text-sm font-semibold">Live Events</h3>
+        <pre class="text-xs text-gray-600 mt-2 whitespace-pre-wrap max-h-64 overflow-auto">{live.join('\n')}</pre>
+      </div>
+    {/if}
   {/if}
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div>
-      <h3 class="text-sm font-semibold">Report (rendered)</h3>
-      <div class="prose max-w-none mt-2">{@html html}</div>
-    </div>
-    <div>
-      <h3 class="text-sm font-semibold">Report (raw)</h3>
-      <pre class="text-xs text-gray-600 mt-2 whitespace-pre-wrap">{raw}</pre>
-    </div>
-  </div>
-  <div class="mt-4">
-    <h3 class="text-sm font-semibold">Live Events</h3>
-    <pre class="text-xs text-gray-600 mt-2 whitespace-pre-wrap max-h-64 overflow-auto">{live.join('\n')}</pre>
-  </div>
 {/if}
 

@@ -3,18 +3,27 @@
   import type { TaskItem } from './TaskCard.svelte';
   import { dndzone } from 'svelte-dnd-action';
 
-  let { title, tasks, loading, onselect, onreorder }: {
+  let { title, tasks, loading, onselect, onreorder, laneHeight }: {
     title: string;
     tasks: TaskItem[];
     loading?: boolean;
     onselect?: (detail: { id: string }) => void;
     onreorder?: (detail: { status: string; ids: string[] }) => void;
+    laneHeight?: string;
   } = $props();
 
   function onFinalize(e: CustomEvent<{ items: TaskItem[] }>) {
     const ids = (e.detail.items as any[]).map((it: any) => it.id as string);
     onreorder?.({ status: title, ids });
   }
+
+  let containerEl: HTMLDivElement;
+  $effect(() => {
+    if (!containerEl) return;
+    const handler = (ev: Event) => onFinalize(ev as CustomEvent<{ items: TaskItem[] }>);
+    containerEl.addEventListener('finalize', handler as EventListener);
+    return () => containerEl.removeEventListener('finalize', handler as EventListener);
+  });
 </script>
 
 <section class="flex flex-col gap-2 bg-white/80 rounded-xl p-3 border shadow-sm
@@ -30,7 +39,7 @@
     }></span>
     <h2 class="text-sm font-semibold">{title} <span class="text-xs text-gray-500">({tasks.length})</span></h2>
   </header>
-  <div class="flex flex-col gap-2" use:dndzone={{ items: tasks, flipDurationMs: 120 }} onfinalize={onFinalize}>
+  <div bind:this={containerEl} class="flex flex-col gap-2 overflow-auto" style={`max-height:${laneHeight ?? '60vh'}`} use:dndzone={{ items: tasks, flipDurationMs: 120, dropFromOthersDisabled: false, dropTargetStyle: { outline: '2px dashed #cbd5e1' } }}>
     {#if loading}
       {#each Array(3) as _, i}
         <div class="p-3 rounded border bg-white animate-pulse">

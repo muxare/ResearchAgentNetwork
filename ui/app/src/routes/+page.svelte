@@ -1,17 +1,22 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  /// <reference types="svelte" />
+  /// <reference types="svelte/elements" />
+  // use $effect instead of onMount for Svelte 5 runes
   import KanbanBoard from '$lib/components/KanbanBoard.svelte';
-  import TaskDetails from '$lib/components/TaskDetails.svelte';
+  import PageHeader from '$lib/components/PageHeader.svelte';
+  import StatusBar from '$lib/components/StatusBar.svelte';
+  import ErrorBanner from '$lib/components/ErrorBanner.svelte';
+  import TaskDetailsModal from '$lib/components/TaskDetailsModal.svelte';
   import SettingsPanel from '$lib/components/SettingsPanel.svelte';
-  import StatusLegend from '$lib/components/StatusLegend.svelte';
   import NewTaskForm from '$lib/components/NewTaskForm.svelte';
   import { serverEvents } from '$lib/stores/events';
   import ActivityPanel from '$lib/components/ActivityPanel.svelte';
-  type TaskItem = { id: string; description: string; status: string; createdAt?: string; priority?: number };
+  import type { TaskItem } from '$lib/types/tasks';
+  import { STATUS_NAMES } from '$lib/constants/statuses';
   let tasks = $state<TaskItem[]>([]);
   let filterText = $state('');
-  let filterStatus = $state('');
   let selectedId = $state<string | null>(null);
+  let showDetails = $state(false);
   let connection = $state<'connecting' | 'connected' | 'reconnecting'>('connecting');
   let reconnectInMs = $state<number | null>(null);
   let loading = $state(true);
@@ -27,16 +32,15 @@
       loading = false;
     }
   }
-  onMount(() => { refreshTasks(); });
+  $effect(() => { refreshTasks(); });
 
   function filtered(list: TaskItem[]) {
     const q = filterText.toLowerCase();
-    return list.filter(t => (!filterStatus || t.status === filterStatus) && (!q || t.description.toLowerCase().includes(q) || (t.id ?? '').toLowerCase().includes(q)));
+    return list.filter(t => (!q || t.description.toLowerCase().includes(q) || (t.id ?? '').toLowerCase().includes(q)));
   }
 
   // Subscribe to centralized server events
   $effect(() => {
-    const STATUS_NAMES = ['Pending','Analyzing','Executing','Aggregating','Completed','Failed'] as const;
     function toStatusName(val: any): string {
       if (typeof val === 'string') return val;
       if (typeof val === 'number') return STATUS_NAMES[val] ?? 'Pending';
@@ -75,7 +79,7 @@
   });
 
   // Periodic safety refresh to recover from missed events
-  onMount(() => {
+  $effect(() => {
     const h = setInterval(() => { refreshTasks(); }, 20000);
     return () => clearInterval(h);
   });
@@ -83,62 +87,31 @@
 
 <main class="p-6 md:p-8 min-h-screen">
   <div class="flex items-baseline justify-between">
-    <div>
-      <h1 class="text-2xl md:text-3xl font-bold tracking-tight">RAN UI</h1>
-      <p class="text-sm text-gray-600">SvelteKit + Tailwind — Kanban</p>
-    </div>
+    <PageHeader title="RAN UI" subtitle="SvelteKit + Tailwind — Kanban" />
   </div>
 
   <div class="mt-4 flex flex-col gap-4">
-    <div class="flex items-center gap-3 bg-white/80 border rounded-xl p-2 shadow-sm text-xs">
-      <div class={
-        connection === 'connected' ? 'px-2 py-0.5 rounded bg-green-50 text-green-700 border border-green-200' :
-        connection === 'reconnecting' ? 'px-2 py-0.5 rounded bg-yellow-50 text-yellow-700 border border-yellow-200' :
-        'px-2 py-0.5 rounded bg-gray-50 text-gray-700 border border-gray-200'
-      }>
-        {connection === 'reconnecting' ? `Reconnecting${reconnectInMs ? ` in ~${Math.round(reconnectInMs/1000)}s` : '…'}` : connection === 'connected' ? 'Connected' : 'Connecting…'}
-      </div>
-      <div class="text-gray-600">Counts:</div>
-      <div class="flex flex-wrap gap-1">
-        {#each ['Pending','Analyzing','Executing','Aggregating','Completed','Failed'] as s}
-          <span class="px-1 py-0.5 rounded border bg-gray-50 text-gray-700">{s}: {tasks.filter(t => t.status === s).length}</span>
-        {/each}
-      </div>
-    </div>
-    <div class="flex items-end gap-3 bg-white/80 border rounded-xl p-3 shadow-sm">
-      <label class="text-sm">
-        <div class="text-xs text-gray-600">Filter</div>
-        <input class="border rounded-md px-2 py-1 focus:ring-2 focus:ring-blue-500/30 focus:outline-none" bind:value={filterText} placeholder="search..." />
-      </label>
-      <label class="text-sm">
-        <div class="text-xs text-gray-600">Status</div>
-        <select class="border rounded-md px-2 py-1 focus:ring-2 focus:ring-blue-500/30 focus:outline-none" bind:value={filterStatus}>
-          <option value="">All</option>
-          <option>Pending</option>
-          <option>Analyzing</option>
-          <option>Executing</option>
-          <option>Aggregating</option>
-          <option>Completed</option>
-          <option>Failed</option>
-        </select>
-      </label>
-    </div>
-
+    <StatusBar {connection} {reconnectInMs} {tasks} />
+    
     {#if error}
-      <div class="text-red-600 text-sm">{error}</div>
+      <ErrorBanner message={error} />
     {/if}
 
     <SettingsPanel />
-    <StatusLegend />
+    
     <NewTaskForm on:created={() => { refreshTasks(); }} />
 
     <div class="space-y-6">
       <div class="bg-white/80 border rounded-xl shadow-sm">
-        <KanbanBoard tasks={filtered(tasks)} loading={loading} onselect={({ id }) => (selectedId = id)} />
+        <KanbanBoard tasks={filtered(tasks)} loading={loading} onselect={({ id }: { id: string }) => { selectedId = id; showDetails = true; }} />
       </div>
-      <div class="bg-white/80 border rounded-xl p-3 shadow-sm">
-        <TaskDetails taskId={selectedId} on:select={(e: CustomEvent<{ id: string }>) => (selectedId = e.detail.id)} />
-      </div>
+      
+      <TaskDetailsModal
+        open={showDetails}
+        taskId={selectedId}
+        on:close={() => (showDetails = false)}
+        on:select={(e: CustomEvent<{ id: string }>) => (selectedId = e.detail.id)}
+      />
       <div class="bg-white/80 border rounded-xl p-3 shadow-sm">
         <ActivityPanel selectedTaskId={selectedId} />
       </div>
