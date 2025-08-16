@@ -163,6 +163,80 @@
 3. **Security Review**: Security audit of current implementation
 4. **User Experience**: Polish UI/UX based on testing feedback
 
+## 🔧 User Experience Insights & System Improvements
+
+### Task Management & Workflow Enhancements
+
+#### Priority System Improvements
+- [ ] **Depth-First Priority**: Implement depth-first priority assignment for subtasks
+- [ ] **Aggregation Priority Boost**: Give aggregation tasks higher priority to complete early
+- [ ] **Dynamic Priority Adjustment**: Adjust priorities based on task dependencies and completion status
+
+#### Task Evaluation & Decomposition
+- [ ] **Sophisticated Evaluation Function**: Replace hard-coded split limits with intelligent analysis
+  - **Domain Complexity Analysis**: Medical, legal, technical, creative task classification
+  - **Human Involvement Detection**: Identify tasks requiring human input, approval, or external data
+  - **Resource Requirement Assessment**: Analyze needs for external APIs, databases, or expert input
+  - **Time Complexity Estimation**: LLM-based time assessment for better decomposition decisions
+  - **Out-of-the-box Potential**: Detect creative tasks that benefit from unexpected approaches
+  - **Learning from History**: Analyze past similar tasks to predict optimal decomposition
+- [ ] **Dynamic Split Thresholds**: Adjust decomposition limits based on task type and available resources
+
+#### Task Lifecycle & Recovery
+- [ ] **Retry Logic Enhancement**: Ensure parent aggregation considers failed subtasks when retrying
+- [ ] **Continue from Shutdown**: Manual continue action for tasks interrupted by system shutdown
+- [ ] **Continue Button**: Add continue functionality alongside retry for stuck pending tasks
+- [ ] **Task Approval Workflow**: New kanban lane for tasks requiring manual approval
+  - **Overflow Task Management**: Handle tasks exceeding max depth as new root tasks with sibling connections
+  - **Approval Queue**: Separate lane for tasks waiting for human approval before execution
+
+### Agent System Enhancements
+
+#### Dynamic System Prompts
+- [ ] **Domain-Aware Agent Prompts**: Generate specialized prompts based on task content
+  - **Medical Expert Prompts**: Specialized prompts for medical research tasks
+  - **Legal Research Prompts**: Expert prompts for legal analysis tasks
+  - **Technical Implementation Prompts**: Specialized prompts for technical tasks
+  - **Creative Research Prompts**: Prompts optimized for creative and exploratory tasks
+- [ ] **Prompt Generation Strategies**:
+  - **Keyword Analysis**: Detect domain-specific terminology
+  - **Semantic Classification**: Use embeddings for task domain classification
+  - **Context Inference**: Analyze task description and metadata for prompt optimization
+  - **Expert Role Assignment**: Assign appropriate expert personas based on task type
+
+### User Interface & Experience
+
+#### Kanban Board Enhancements
+- [ ] **Stacked Task Cards**: Visual stack illusion for completed parent-subtask groups
+  - **Completed Column Stacking**: Show parent with completed subtasks as a single stacked card
+  - **Visual Stack Effect**: Subtle offset backgrounds and (+N) indicators for hidden subtasks
+  - **Stack Behavior**: Only apply to completed tasks; other columns show individual cards
+- [ ] **Approval Lane**: New kanban column for tasks awaiting manual approval
+- [ ] **Task Relationship Visualization**: Better display of parent-child and sibling relationships
+
+#### Data Interaction & Chat
+- [ ] **Chat Interface for Stored Data**: Interactive chat with Qdrant and SQL data
+  - **Research Data Chat**: Ask questions about stored research results
+  - **Vector Database Query**: Natural language queries for semantic memory
+  - **SQL Data Exploration**: Chat-based exploration of task and result data
+  - **Context-Aware Responses**: Chat responses that understand task relationships and history
+
+### Data Storage & Persistence
+
+#### Database Migration
+- [ ] **SQL Server Migration**: Move from current storage to actual MSSQL
+  - **Entity Framework Implementation**: Proper ORM for data persistence
+  - **Data Migration Scripts**: Migrate existing in-memory data to SQL Server
+  - **Connection String Management**: Secure database connection configuration
+- [ ] **Task Persistence**: Long-term storage of tasks, results, and relationships
+- [ ] **Audit Trail**: Complete history of task lifecycle and changes
+
+#### Report Generation
+- [ ] **Report Creator Agent Tasks**: Dedicated tasks for report generation agents
+  - **Report Template System**: Structured report generation based on task type
+  - **Citation Management**: Automated citation and source tracking
+  - **Format Export**: Multiple output formats (Markdown, HTML, PDF)
+
 ## 📈 Success Metrics
 
 ### Technical Metrics
@@ -205,5 +279,6 @@
 - **Backend**: Full multi-agent architecture with web search capabilities
 - **AI Integration**: Native Semantic Kernel usage with Ollama support
 - **Next Focus**: Production readiness and advanced feature development
+- **User Insights**: Real-world usage has revealed important workflow and UX improvements needed
 
-This plan reflects the actual current state of implementation and provides a realistic roadmap for production deployment and future enhancements. 
+This plan reflects the actual current state of implementation and provides a realistic roadmap for production deployment and future enhancements, incorporating valuable user experience insights from actual system usage. 
