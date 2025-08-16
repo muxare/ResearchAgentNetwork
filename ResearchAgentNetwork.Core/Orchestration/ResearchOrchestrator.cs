@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text;
+using System.Text.Json;
 using Microsoft.SemanticKernel;
 using ResearchAgentNetwork.SemanticMemory;
 
@@ -57,6 +58,18 @@ public class ResearchOrchestrator
         try { TaskEventPublished?.Invoke(e); } catch { }
     }
 
+    private static string JsonMsg(object details)
+    {
+        try
+        {
+            return "json:" + JsonSerializer.Serialize(details);
+        }
+        catch
+        {
+            return "json:{}";
+        }
+    }
+
     public void UpdateMaxDecompositionDepth(int maxDepth)
     {
         _maxDecompositionDepth = Math.Max(0, maxDepth);
@@ -74,6 +87,12 @@ public class ResearchOrchestrator
             return _taskRegistry.Values.Where(t => t.ParentTaskId == parentId).ToList();
         });
         _agents["assessor"] = new QualityAssessmentAgent();
+        _agents["outline"] = new ReportOutlineAgent();
+        _agents["section_writer"] = new SectionWriterAgent(_memory);
+        _agents["fact_check"] = new FactCheckAgent(_memory);
+        _agents["citation_manager"] = new CitationManagerAgent();
+        _agents["curator"] = new KnowledgeCuratorAgent(_memory);
+        _agents["memory_router"] = new MemoryRouterAgent();
         // Web search is injected later via setter when service is available
     }
 
@@ -181,6 +200,69 @@ public class ResearchOrchestrator
                     task.Status = TaskStatus.Completed;
                     Console.WriteLine($"🧷 Aggregated {task.SubTaskIds.Count} subtasks for parent {task.Id}");
                     Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "aggregated" });
+
+                    // Phase B: Outline planning stage after aggregation
+                    try
+                    {
+                        var outlineResp = await _agents["outline"].ProcessAsync(task, _kernel);
+                        if (outlineResp.Success && outlineResp.Data is ReportOutline outline)
+                        {
+                            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "outlined", Message = $"sections:{outline.Sections.Count}" });
+
+                            // Phase C: Write each section (best-effort, sequential for now)
+                            foreach (var section in outline.Sections)
+                            {
+                                var req = new SectionWriterAgent.SectionWriteRequest
+                                {
+                                    SectionId = section.Id,
+                                    Title = section.Title,
+                                    Purpose = section.Purpose,
+                                    EvidenceIds = section.EvidenceIds
+                                };
+                                task.Metadata["SectionWriteRequest"] = req;
+                                try
+                                {
+                                    var writeResp = await _agents["section_writer"].ProcessAsync(task, _kernel);
+                                    if (writeResp.Success && writeResp.Data is ReportSectionDraft draft)
+                                    {
+                                        Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "section_drafted", Message = draft.SectionId });
+
+                                        // Phase D: Fact check the drafted section
+                                        try
+                                        {
+                                            task.Metadata["FactCheckInput"] = new FactCheckAgent.FactCheckInput { SectionId = draft.SectionId, ContentMd = draft.ContentMd };
+                                            var fcResp = await _agents["fact_check"].ProcessAsync(task, _kernel);
+                                            if (fcResp.Success)
+                                            {
+                                                Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "section_fact_checked", Message = draft.SectionId });
+                                            }
+                                        }
+                                        catch { }
+
+                                        // Phase D: Normalize citations for the section
+                                        try
+                                        {
+                                            task.Metadata["CitationNormalizeInput"] = new CitationManagerAgent.CitationNormalizeInput
+                                            {
+                                                SectionId = draft.SectionId,
+                                                ContentMd = draft.ContentMd,
+                                                RawCitations = draft.Citations,
+                                                Style = "APA"
+                                            };
+                                            var cmResp = await _agents["citation_manager"].ProcessAsync(task, _kernel);
+                                            if (cmResp.Success)
+                                            {
+                                                Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "section_citations_normalized", Message = draft.SectionId });
+                                            }
+                                        }
+                                        catch { }
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+                    catch { }
                 }
                 return;
             }
@@ -191,9 +273,11 @@ public class ResearchOrchestrator
                 task.Status = TaskStatus.Analyzing;
                 Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "status" });
 
+                Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "agent_started", Message = JsonMsg(new { agent = "analyzer" }) });
                 var analyzerResponse = await _agents["analyzer"].ProcessAsync(task, _kernel);
                 if (analyzerResponse.Data is List<ResearchTask> subTasks)
                 {
+                    Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "agent_decision", Message = JsonMsg(new { agent = "analyzer", subtaskCount = subTasks.Count }) });
                     Console.WriteLine($"🧩 Decomposed into {subTasks.Count} subtasks (depth {currentDepth} → {currentDepth + 1})");
                     foreach (var subTask in subTasks)
                     {
@@ -230,6 +314,7 @@ public class ResearchOrchestrator
                 try
                 {
                     // Decide if retrieval is needed
+                    Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "agent_started", Message = JsonMsg(new { agent = "retrieval_decision" }) });
                     var decisionResp = await _agents["retrieval_decision"].ProcessAsync(task, _kernel);
                     bool requireRetrieval = true;
                     var types = new List<string> { "vector" };
@@ -237,16 +322,19 @@ public class ResearchOrchestrator
                     {
                         requireRetrieval = dec.RequireRetrieval;
                         types = dec.RetrievalTypes.Count > 0 ? dec.RetrievalTypes : types;
+                        Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "agent_decision", Message = JsonMsg(new { agent = "retrieval_decision", requireRetrieval = requireRetrieval, retrievalTypes = types }) });
                     }
 
                     if (requireRetrieval && types.Contains("vector"))
                     {
                         // Plan queries
+                        Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "agent_started", Message = JsonMsg(new { agent = "query_planner" }) });
                         var planResp = await _agents["query_planner"].ProcessAsync(task, _kernel);
                         var queries = new List<string> { task.Description };
                         if (planResp.Data is QueryPlannerAgent.QueryPlan plan && plan.Queries.Count > 0)
                         {
                             queries = plan.Queries;
+                            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "agent_decision", Message = JsonMsg(new { agent = "query_planner", queries = queries }) });
                         }
                         // Try vector retrieval using best query first
                         var retrieved = new List<RetrievedItem>();
@@ -291,10 +379,21 @@ public class ResearchOrchestrator
                 catch { }
             }
 
+            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "agent_started", Message = JsonMsg(new { agent = "executor" }) });
             var executorResponse = await _agents["executor"].ProcessAsync(task, _kernel);
             if (executorResponse.Success && executorResponse.Data is ResearchResult result)
             {
                 task.Result = result;
+                try
+                {
+                    int retrievedCount = 0;
+                    if (task.Metadata.TryGetValue("RetrievedContext", out var rc) && rc is List<RetrievedItem> list)
+                    {
+                        retrievedCount = list.Count;
+                    }
+                    Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "agent_decision", Message = JsonMsg(new { agent = "executor", retrievedCount }) });
+                }
+                catch { }
                 task.Status = TaskStatus.Completed;
                 Console.WriteLine($"✅ Completed task {task.Id} with confidence {task.Result.ConfidenceScore:P1}");
                 Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "completed" });
@@ -309,6 +408,29 @@ public class ResearchOrchestrator
                         {
                             _ = Task.Run(() => _memory.IndexResultAsync(task, task.Result!));
                             Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "stored", Message = "Result stored in memory" });
+
+                            // Phase E: Run memory routing and curation hooks
+                            try
+                            {
+                                var routeResp = await _agents["memory_router"].ProcessAsync(task, _kernel);
+                                if (routeResp.Success && routeResp.Data is MemoryRouterAgent.RouteDecision route)
+                                {
+                                    task.Metadata["MemoryRouteApplied"] = route;
+                                    Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "routed" });
+                                }
+                            }
+                            catch { }
+
+                            try
+                            {
+                                task.Metadata["CurateInput"] = new KnowledgeCuratorAgent.CurateInput { Query = task.Description, TopK = _retrievalTopK, DuplicateThreshold = _duplicateThreshold };
+                                var curResp = await _agents["curator"].ProcessAsync(task, _kernel);
+                                if (curResp.Success)
+                                {
+                                    Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "curated" });
+                                }
+                            }
+                            catch { }
                         }
                         else
                         {

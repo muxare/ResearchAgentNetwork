@@ -31,12 +31,7 @@
     try { localStorage.setItem('kanbanFilterText', filterText); } catch {}
   }
 
-  const STATUS_NAMES = ['Pending','Analyzing','Executing','Aggregating','Completed','Failed'] as const;
-  function toStatusName(val: any): string {
-    if (typeof val === 'string') return val;
-    if (typeof val === 'number') return STATUS_NAMES[val] ?? 'Pending';
-    return 'Pending';
-  }
+  import { toStatusName } from '$lib/utils/status';
 
   type DecoratedTask = TaskItem & { depth?: number; isRoot?: boolean };
   function byStatus(status: string): DecoratedTask[] {
@@ -62,6 +57,55 @@
       const d = depthFor(t.id);
       return { ...t, depth: d, isRoot: !parentById[t.id] };
     });
+    // For Completed column, collapse fully-completed parent with all completed children into a single stacked display
+    if (key === 'Completed') {
+      const allTasks = (tasks as any[]) as any[];
+      const childrenByParent: Record<string, any[]> = {};
+      for (const t of allTasks) {
+        const pid = (t as any).parentTaskId as string | undefined;
+        if (!pid) continue;
+        if (!childrenByParent[pid]) childrenByParent[pid] = [];
+        childrenByParent[pid].push(t);
+      }
+      const completedById = new Set<string>((decorated as any[]).map(x => String((x as any).id)));
+      const parentIsCompleted = (id: string) => completedById.has(String(id));
+
+      // Determine which parents qualify for stacking: have at least one child, parent is completed, and all children are completed
+      const stackableParentIds = new Set<string>();
+      for (const parentId of Object.keys(childrenByParent)) {
+        const children = childrenByParent[parentId] || [];
+        if (children.length === 0) continue;
+        if (!parentIsCompleted(parentId)) continue;
+        let allChildrenCompleted = true;
+        for (const c of children) {
+          const st = normalizeStatus(toStatusName((c as any).status));
+          if (st !== 'Completed') { allChildrenCompleted = false; break; }
+        }
+        if (allChildrenCompleted) stackableParentIds.add(parentId);
+      }
+
+      if (stackableParentIds.size > 0) {
+        // annotate parents with _stackCount and remove their children from the Completed list
+        const childIdToHide = new Set<string>();
+        const parentIdToCount: Record<string, number> = {};
+        for (const parentId of stackableParentIds) {
+          const children = childrenByParent[parentId] || [];
+          parentIdToCount[parentId] = children.length;
+          for (const c of children) childIdToHide.add(String((c as any).id));
+        }
+
+        const collapsed: DecoratedTask[] = (decorated as any[])
+          .filter(x => !childIdToHide.has(String((x as any).id)))
+          .map(x => {
+            const pid = String((x as any).id);
+            if (parentIdToCount[pid] && parentIdToCount[pid] > 0) {
+              return { ...(x as any), _stackCount: parentIdToCount[pid] } as any;
+            }
+            return x as any;
+          });
+        return orderTasksForStatus<DecoratedTask>(key as any, collapsed, order);
+      }
+    }
     return orderTasksForStatus<DecoratedTask>(key as any, decorated, order);
   }
 
@@ -83,6 +127,16 @@
       saveOrder(order as any);
     }
   });
+
+  // Typed handlers to avoid implicit any in template lambdas
+  function handleSelect(detail: { id: string }) {
+    onselect?.(detail);
+  }
+  function handleReorder(detail: { status: string; ids: string[] }) {
+    const { status, ids } = detail;
+    order = { ...order, [status]: ids } as any;
+    saveOrder(order as any);
+  }
 </script>
 
 <div class="overflow-x-hidden">
@@ -114,13 +168,9 @@
         title={s}
         tasks={byStatus(s)}
         loading={loading}
-        onselect={(detail) => onselect?.(detail)}
+        onselect={handleSelect}
         laneHeight={laneHeight ?? laneHeightLocal}
-        onreorder={(detail) => {
-          const { status, ids } = detail as any;
-          order = { ...order, [status]: ids } as any;
-          saveOrder(order as any);
-        }}
+        onreorder={handleReorder}
       />
     {/each}
   </div>

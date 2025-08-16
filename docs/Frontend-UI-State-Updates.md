@@ -33,6 +33,35 @@ This UI uses Server-Sent Events (SSE) for near-real-time updates of task status 
  - `ui/app/src/lib/components/TaskCard.svelte`
   - Briefly highlights a card when its status changes.
  
+### Completed column stacked rendering
+
+We render an illusion of a stacked card when a parent task and all its subtasks are completed. The parent appears once in the Completed column with a subtle offset “stack” behind it, and a (+N) indicator where N is the number of completed subtasks hidden behind the parent.
+
+Behavior:
+
+- A task is considered a parent if it has `parentTaskId` undefined or null, and there are one or more tasks with `parentTaskId` equal to its `id`.
+- In the `Completed` column only, if a parent and all of its children are also completed, we render a single parent card.
+- The parent card shows a visual stack (two offset backgrounds) and a `(+N)` indicator showing the number of completed subtasks.
+- The completed child cards are hidden from the `Completed` column list to keep the UI compact.
+
+Implementation notes:
+
+- Grouping and collapsing is handled in `ui/app/src/lib/components/KanbanBoard.svelte` inside `byStatus('Completed')`.
+- We compute `childrenByParent` from the full task list, determine parents whose children are all completed, and annotate such parent cards with `_stackCount` while filtering out the children from the Completed list.
+- The stacked illusion and `(+N)` badge are rendered in `ui/app/src/lib/components/TaskCard.svelte` when `_stackCount > 0`.
+
+How to test:
+
+1. Create a parent task P and subtasks C1, C2 linked via `parentTaskId: P.id`.
+2. Mark C1 and C2 as Completed; keep P not completed yet → C1 and C2 should appear normally in their appropriate columns.
+3. Mark P as Completed → In the Completed column, C1 and C2 should be hidden; P should display once with a subtle stacked background and a `(+2)` indicator.
+4. If any child is not completed, P should not display as a stack and children should remain individually visible.
+
+Limitations:
+
+- This behavior only applies in the `Completed` column. Other columns display all tasks individually.
+- `_stackCount` is a transient UI-only field added in-memory; it is not persisted.
+ 
 ### Activity verification hints
 
 The Activity panel includes a guidance column that explains how to verify each event:
@@ -81,4 +110,16 @@ Implemented via `getVerifyHint()` in `ui/app/src/lib/components/ActivityPanel.sv
 
 - Backend: add SSE heartbeat (comment lines) and headers to improve robustness behind proxies.
 - Frontend: centralize SSE into a shared store to avoid multiple connections.
+
+### Activity panel item limit change
+
+- Previously, `ui/app/src/lib/components/ActivityPanel.svelte` defaulted to a `limit` of 100 items and sliced the list accordingly.
+- Now, `limit` is optional. If omitted, the panel retains all activities for the session. If provided (finite), the list is capped to that value.
+- Trade-off: keeping all items increases memory usage for very long sessions; pass a `limit` to bound it when needed.
+
+How to test:
+1. Start backend and UI.
+2. Generate more than 100 task events.
+3. Verify the Activity panel shows all entries beyond 100.
+4. Optionally render `<ActivityPanel limit={200} />` and confirm the cap applies at 200.
 

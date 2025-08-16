@@ -35,6 +35,8 @@ public class AppDbContext : DbContext
             b.Property(e => e.Status).HasMaxLength(32);
             b.Property(e => e.Message);
             b.Property(e => e.TimestampUtc);
+            b.Property(e => e.AgentRole).HasMaxLength(64);
+            b.Property(e => e.DetailsJson);
         });
 
         modelBuilder.Entity<TaskReportEntity>(b =>

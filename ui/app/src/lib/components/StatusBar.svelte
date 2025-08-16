@@ -21,7 +21,7 @@
       : 'Connecting…';
 </script>
 
-<div class="flex items-center gap-3 bg-white/80 border rounded-xl p-2 shadow-sm text-xs">
+<div class="flex items-center gap-3 p-2 text-xs">
   <div class={connectionClass}>{connectionText}</div>
   <div class="text-gray-600">Counts:</div>
   <div class="flex flex-wrap gap-1">

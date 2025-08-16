@@ -18,8 +18,9 @@
   }
 
   let containerEl: HTMLDivElement;
-  $effect(() => {
-    if (!containerEl) return;
+  import { onMount } from 'svelte';
+  onMount(() => {
+    if (!containerEl) return () => {};
     const handler = (ev: Event) => onFinalize(ev as CustomEvent<{ items: TaskItem[] }>);
     containerEl.addEventListener('finalize', handler as EventListener);
     return () => containerEl.removeEventListener('finalize', handler as EventListener);

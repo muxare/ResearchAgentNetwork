@@ -10,10 +10,10 @@
     isRoot?: boolean;
   }
 
+  import { now as nowStore } from '$lib/stores/now';
   let { task, onselect }: { task: TaskItem & { flashUntil?: number }; onselect?: (detail: { id: string }) => void } = $props();
-  let now = $state(Date.now());
-  const tick = setInterval(() => { now = Date.now(); }, 250);
-  $effect(() => () => clearInterval(tick));
+  // Use shared timer to avoid per-card intervals
+  const now = nowStore;
 
   const statusToColor: Record<string, string> = {
     Pending: 'bg-gray-500 text-white',
@@ -34,11 +34,22 @@
   }
 </script>
 
-<button type="button" class={`w-full text-left p-2 rounded-lg border bg-white hover:shadow-md transition group text-xs ${task.flashUntil && task.flashUntil > now ? 'ring-2 ring-offset-1 ring-yellow-300' : ''}`}
-onclick={() => onselect?.({ id: task.id })}>
+<button type="button" class={`relative w-full text-left p-2 rounded-lg border bg-white hover:shadow-md transition group text-xs ${task.flashUntil && task.flashUntil > $now ? 'ring-2 ring-offset-1 ring-yellow-300' : ''}`}
+on:click={() => onselect?.({ id: task.id })}>
+  {#if (task as any)._stackCount > 0}
+    <span class="pointer-events-none absolute inset-0 -z-10">
+      <span class="absolute inset-0 translate-x-1 translate-y-1 rounded-lg border bg-white/90 shadow-sm"></span>
+      <span class="absolute inset-0 translate-x-2 translate-y-2 rounded-lg border bg-white/80 shadow-sm"></span>
+    </span>
+  {/if}
   <div class="flex items-center justify-between">
     <span class="text-[10px] text-gray-500 font-mono truncate max-w-[96px]">{task.id}</span>
-    <span class={`text-[10px] px-1 py-0.5 rounded-full shadow ${statusToColor[task.status] ?? 'bg-gray-400 text-white'}`}>{task.status}</span>
+    <span class={`text-[10px] px-1 py-0.5 rounded-full shadow ${statusToColor[task.status] ?? 'bg-gray-400 text-white'}`}>
+      {task.status}
+      {#if (task as any)._stackCount > 0}
+        <span class="ml-1 text-[9px] text-gray-700 align-middle">(+{(task as any)._stackCount})</span>
+      {/if}
+    </span>
   </div>
   <div class="mt-1 text-xs font-medium leading-tight text-slate-800 line-clamp-2 group-hover:line-clamp-4">
     {#if task.isRoot}

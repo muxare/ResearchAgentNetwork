@@ -59,7 +59,13 @@ public class WebSearchAgent : IResearchAgent
                         Content = text,
                         Sources = new List<string> { r.Url },
                         ConfidenceScore = 0.0,
-                        RequiresAdditionalResearch = false
+                        RequiresAdditionalResearch = false,
+                        Metadata = new Dictionary<string, object>
+                        {
+                            ["sourceTitle"] = r.Title ?? string.Empty,
+                            ["sourceUrl"] = r.Url ?? string.Empty,
+                            ["ingestedFrom"] = "websearch"
+                        }
                     };
                     // Fire and forget to avoid blocking hot path
                     _ = _memory.IndexResultAsync(task, rr);

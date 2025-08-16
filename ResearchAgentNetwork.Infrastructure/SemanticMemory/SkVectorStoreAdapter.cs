@@ -38,6 +38,16 @@ public class SkVectorStoreAdapter : IVectorStore
         [VectorStoreData(IsFullTextIndexed = true)]
         public string? Payload { get; set; }
 
+        // Store minimal provenance in additional data columns
+        [VectorStoreData]
+        public string? Url { get; set; }
+
+        [VectorStoreData]
+        public int? ChunkIndex { get; set; }
+
+        [VectorStoreData]
+        public int? TotalChunks { get; set; }
+
         [VectorStoreVector(Dimensions: 768, DistanceFunction = DistanceFunction.CosineSimilarity)]
         public ReadOnlyMemory<float>? Embedding { get; set; }
     }
@@ -74,10 +84,21 @@ public class SkVectorStoreAdapter : IVectorStore
         {
             var col = store.GetCollection<Guid, ResultRecord>(Map(collection));
             await col.EnsureCollectionExistsAsync(cancellationToken: cancellationToken);
+            // Map metadata fields if present
+            record.Metadata ??= new Dictionary<string, object>();
+            record.Metadata.TryGetValue("url", out var urlObj);
+            var url = urlObj as string;
+            int? chunkIndex = null;
+            int? totalChunks = null;
+            if (record.Metadata.TryGetValue("chunkIndex", out var ci) && ci is int cix) chunkIndex = cix;
+            if (record.Metadata.TryGetValue("totalChunks", out var tc) && tc is int tcx) totalChunks = tcx;
             await col.UpsertAsync(new ResultRecord
             {
                 Id = record.Id,
                 Payload = record.Payload,
+                Url = string.IsNullOrWhiteSpace(url) ? null : url,
+                ChunkIndex = chunkIndex,
+                TotalChunks = totalChunks,
                 Embedding = new ReadOnlyMemory<float>(record.Vector)
             }, cancellationToken: cancellationToken);
         }
@@ -115,7 +136,12 @@ public class SkVectorStoreAdapter : IVectorStore
                     Id: r.Record?.Id ?? Guid.Empty,
                     Score: r.Score ?? 0.0,
                     Payload: includePayload ? r.Record?.Payload : null,
-                    Metadata: null));
+                    Metadata: r.Record is null ? null : new Dictionary<string, object>
+                    {
+                        ["url"] = r.Record.Url ?? string.Empty,
+                        ["chunkIndex"] = r.Record.ChunkIndex ?? 0,
+                        ["totalChunks"] = r.Record.TotalChunks ?? 0
+                    }));
             }
         }
 

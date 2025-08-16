@@ -1,16 +1,40 @@
 <script lang="ts">
+  // @ts-nocheck
   import { serverEvents } from '$lib/stores/events';
 
   type ActivityItem = {
     ts: string;
+    tsMs: number;
     taskId: string;
     status?: string;
     eventType?: string;
     message?: string;
+    agent?: string;
   };
 
-  let { selectedTaskId, limit = 100 }: { selectedTaskId?: string | null; limit?: number } = $props();
+  let { selectedTaskId, limit }: { selectedTaskId?: string | null; limit?: number } = $props();
   let items = $state<ActivityItem[]>([]);
+  let filterSubtree = $state(false);
+  let filterAgent = $state<string>('');
+  let filterType = $state<string>('');
+  let filterSinceMin = $state<number>(0);
+
+  function isInSubtree(it: ActivityItem): boolean {
+    if (!selectedTaskId) return true;
+    if (!filterSubtree) return true;
+    // Fast path: direct task match
+    if ((it.taskId || '').toLowerCase() === (selectedTaskId || '').toLowerCase()) return true;
+    // Heuristic: treat events with ParentTaskId in message (if present) as descendants
+    try {
+      const msg: string = it.message || '';
+      if (msg.startsWith('json:')) {
+        const obj = JSON.parse(msg.substring(5));
+        const pid = (obj.parentTaskId || obj.parent || obj.parent_id || '').toString();
+        if (pid && pid.toLowerCase() === (selectedTaskId || '').toLowerCase()) return true;
+      }
+    } catch {}
+    return true; // default allow to avoid hiding events until full tree available
+  }
 
 	function getVerifyHint(it: ActivityItem): string {
 		const type = (it.eventType || '').toLowerCase();
@@ -50,35 +74,68 @@
 		}
 	}
 
-  $effect(() => {
+  import { toStatusName } from '$lib/utils/status';
+
+  import { onMount } from 'svelte';
+  onMount(() => {
     const unsub = serverEvents.subscribe((msg: any) => {
       if (!msg) return;
       if (msg.type === 'task' && msg.TaskId) {
-        const STATUS_NAMES = ['Pending','Analyzing','Executing','Aggregating','Completed','Failed'] as const;
-        const toStatusName = (val: any) => typeof val === 'string' ? val : (typeof val === 'number' ? (STATUS_NAMES as any)[val] ?? 'Pending' : 'Pending');
         const row: ActivityItem = {
           ts: new Date().toLocaleTimeString(),
+          tsMs: Date.now(),
           taskId: String(msg.TaskId),
           status: toStatusName(msg.Status),
           eventType: msg.EventType,
-          message: msg.Message
+          message: msg.Details ? `json:${JSON.stringify(msg.Details)}` : msg.Message,
+          agent: msg.Agent || (msg.Details && msg.Details.agent ? msg.Details.agent : undefined)
         };
-        items = [row, ...items].slice(0, limit);
+        items = (limit && isFinite(limit)) ? [row, ...items].slice(0, limit) : [row, ...items];
       }
     });
     return () => unsub();
   });
 
   function filtered() {
-    // Always show all activities; ignore selectedTaskId for filtering
-    return items;
+    const now = Date.now();
+    return items
+      .filter(isInSubtree)
+      .filter(it => !filterAgent || (it.agent || '').toLowerCase() === filterAgent.toLowerCase())
+      .filter(it => !filterType || (it.eventType || '').toLowerCase() === filterType.toLowerCase())
+      .filter(it => {
+        if (!filterSinceMin || filterSinceMin <= 0) return true;
+        return (now - (it.tsMs || now)) <= filterSinceMin * 60_000;
+      });
   }
 </script>
 
 <div class="p-3 rounded border bg-white">
   <div class="flex items-center justify-between">
     <h3 class="text-sm font-semibold">Activity</h3>
-    <div class="text-xs text-gray-500">{filtered().length}/{items.length}</div>
+    <div class="flex items-center gap-3">
+      <label class="flex items-center gap-1 text-xs text-gray-600">
+        <input type="checkbox" bind:checked={filterSubtree} />
+        subtree
+      </label>
+      <label class="flex items-center gap-1 text-xs text-gray-600">
+        agent
+        <input class="border rounded px-1 py-0.5 w-24" placeholder="any" bind:value={filterAgent} />
+      </label>
+      <label class="flex items-center gap-1 text-xs text-gray-600">
+        type
+        <input class="border rounded px-1 py-0.5 w-28" placeholder="any" bind:value={filterType} />
+      </label>
+      <label class="flex items-center gap-1 text-xs text-gray-600">
+        since
+        <select class="border rounded px-1 py-0.5" bind:value={filterSinceMin}>
+          <option value={0}>all</option>
+          <option value={10}>10m</option>
+          <option value={30}>30m</option>
+          <option value={60}>60m</option>
+        </select>
+      </label>
+      <div class="text-xs text-gray-500">{filtered().length}/{items.length}</div>
+    </div>
   </div>
   {#if items.length === 0}
     <div class="text-xs text-gray-500 mt-2">No recent activity.</div>
@@ -89,6 +146,7 @@
           <span class="text-gray-500 shrink-0 w-20">{it.ts}</span>
           <span class="font-mono text-[10px] text-gray-500 shrink-0 w-36 truncate">{it.taskId}</span>
           <span class="shrink-0 w-20">{it.eventType}</span>
+          <span class="shrink-0 w-24 text-gray-500">{it.agent}</span>
           <span class="shrink-0 w-24">{it.status}</span>
 					<span class="shrink-0 w-56 text-gray-600">{getVerifyHint(it)}</span>
           <span class="truncate">{it.message}</span>

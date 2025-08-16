@@ -135,7 +135,8 @@ SemaphoreSlim GetWriteSemaphore(HttpResponse r)
 }
 orchestrator.TaskEventPublished += (e) =>
 {
-    string payload = System.Text.Json.JsonSerializer.Serialize(new { type = "task", e.TaskId, e.Status, e.EventType, e.ParentTaskId, e.Message, e.TimestampUtc });
+    var (agent, details) = ExtractAgentAndDetails(e.Message);
+    string payload = System.Text.Json.JsonSerializer.Serialize(new { type = "task", e.TaskId, e.Status, e.EventType, e.ParentTaskId, e.Message, e.TimestampUtc, Agent = agent, Details = details });
     List<HttpResponse> targets;
     lock (sync) { targets = subscribers.ToList(); }
     foreach (var resp in targets)
@@ -195,13 +196,16 @@ orchestrator.TaskEventPublished += async (e) =>
                 te.ParentTaskId = t.ParentTaskId;
             }
         }
+        var (agent, details) = ExtractAgentAndDetails(e.Message);
         db.TaskEvents.Add(new TaskEventEntity
         {
             TaskId = e.TaskId,
             EventType = e.EventType,
             Status = e.Status.ToString(),
             Message = e.Message,
-            TimestampUtc = e.TimestampUtc
+            TimestampUtc = e.TimestampUtc,
+            AgentRole = agent,
+            DetailsJson = details
         });
         await db.SaveChangesAsync();
 
@@ -230,6 +234,11 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
+    try
+    {
+        EnsureTaskEventsColumns(db);
+    }
+    catch { }
 }
 // Initialize LLM logger now that app services are available
 KernelExtensionsApp.Logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("LLM");
@@ -242,6 +251,8 @@ if (enableWebSearch)
     IWebSearchService webSearchService = searchProvider.ToLower() switch
     {
         "tavily" => new SKTavilyWebSearchService(builder.Configuration["WebSearch:Tavily:ApiKey"] ?? string.Empty),
+        // Use direct Tavily API for richer provenance (title/url)
+        "tavilyapi" => new TavilyWebSearchService(builder.Configuration["WebSearch:Tavily:ApiKey"] ?? string.Empty),
         _ => new NoOpWebSearchService()
     };
     var webSearchAgent = new WebSearchAgent(webSearchService, memory);
@@ -316,6 +327,40 @@ app.MapGet("/api/tasks/{id:guid}/report", (Guid id) =>
 {
     var report = orchestrator.GenerateTaskReport(id);
     return Results.Text(report, "text/plain");
+});
+
+// Events for a task (Phase 1 timeline API)
+app.MapGet("/api/tasks/{id:guid}/events", async (Guid id, bool? includeChildren, int? top, int? skip, AppDbContext db) =>
+{
+    var include = includeChildren ?? false;
+    var take = Math.Clamp(top ?? 500, 1, 5000);
+    var sk = Math.Max(0, skip ?? 0);
+
+    var ids = new HashSet<Guid> { id };
+    if (include)
+    {
+        // BFS over Tasks table to collect all descendants
+        var queue = new Queue<Guid>();
+        queue.Enqueue(id);
+        while (queue.Count > 0)
+        {
+            var cur = queue.Dequeue();
+            var children = await db.Tasks.Where(t => t.ParentTaskId == cur).Select(t => t.Id).ToListAsync();
+            foreach (var cid in children)
+            {
+                if (ids.Add(cid)) queue.Enqueue(cid);
+            }
+        }
+    }
+
+    var events = await db.TaskEvents
+        .Where(e => ids.Contains(e.TaskId))
+        .OrderBy(e => e.TimestampUtc)
+        .Skip(sk)
+        .Take(take)
+        .ToListAsync();
+
+    return Results.Ok(events);
 });
 
 // Persist report
@@ -516,6 +561,63 @@ static (string host, int port) ParseQdrantEndpoint(string? endpoint)
     }
 
     return (raw, defaultGrpcPort);
+}
+
+static (string? agent, string? detailsJson) ExtractAgentAndDetails(string? message)
+{
+    if (string.IsNullOrWhiteSpace(message)) return (null, null);
+    var s = message!;
+    if (!s.StartsWith("json:")) return (null, null);
+    var json = s.Substring(5);
+    try
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        string? agent = null;
+        if (doc.RootElement.TryGetProperty("agent", out var av) && av.ValueKind == System.Text.Json.JsonValueKind.String)
+        {
+            agent = av.GetString();
+        }
+        return (agent, json);
+    }
+    catch
+    {
+        return (null, null);
+    }
+}
+
+static void EnsureTaskEventsColumns(AppDbContext db)
+{
+    var conn = db.Database.GetDbConnection();
+    conn.Open();
+    try
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info('TaskEvents')";
+        var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var reader = cmd.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                cols.Add(reader.GetString(1)); // name column
+            }
+        }
+        if (!cols.Contains("AgentRole"))
+        {
+            using var alter1 = conn.CreateCommand();
+            alter1.CommandText = "ALTER TABLE TaskEvents ADD COLUMN AgentRole TEXT";
+            alter1.ExecuteNonQuery();
+        }
+        if (!cols.Contains("DetailsJson"))
+        {
+            using var alter2 = conn.CreateCommand();
+            alter2.CommandText = "ALTER TABLE TaskEvents ADD COLUMN DetailsJson TEXT";
+            alter2.ExecuteNonQuery();
+        }
+    }
+    finally
+    {
+        conn.Close();
+    }
 }
 
 public record TaskSubmit(string Description, int? Priority);

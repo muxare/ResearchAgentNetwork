@@ -19,6 +19,8 @@ public class TaskEventEntity
     public string Status { get; set; } = string.Empty;
     public string? Message { get; set; }
     public DateTime TimestampUtc { get; set; }
+    public string? AgentRole { get; set; }
+    public string? DetailsJson { get; set; }
 }
 
 public class TaskReportEntity

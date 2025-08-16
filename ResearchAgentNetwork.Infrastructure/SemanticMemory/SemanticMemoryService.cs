@@ -47,7 +47,8 @@ public class SemanticMemoryService : ISemanticMemoryService
             var vec = await _embeddingService.EmbedAsync(chunkText, cancellationToken);
             var rec = new VectorRecord
             {
-                Id = task.Id, // same task id; chunk metadata disambiguates
+                // Generate a unique id per chunk to avoid overwriting entries in stores
+                Id = Guid.NewGuid(),
                 Vector = vec,
                 Metadata = new Dictionary<string, object>
                 {
@@ -55,6 +56,8 @@ public class SemanticMemoryService : ISemanticMemoryService
                     ["confidence"] = result.ConfidenceScore,
                     ["chunkIndex"] = i,
                     ["totalChunks"] = total,
+                    // Provenance fields (best-effort)
+                    ["url"] = (result.Sources?.FirstOrDefault() ?? string.Empty)
                 },
                 Payload = chunkText
             };
