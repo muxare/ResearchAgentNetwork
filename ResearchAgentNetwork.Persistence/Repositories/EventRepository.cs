@@ -25,10 +25,12 @@ public class EventRepository : IEventRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<TaskEventEntity>> QueryEventsAsync(Guid? taskId, int skip, int take, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<TaskEventEntity>> QueryEventsAsync(Guid? taskId, DateTime? fromUtc, DateTime? toUtc, int skip, int take, CancellationToken cancellationToken = default)
     {
         var query = _db.TaskEvents.AsQueryable();
         if (taskId.HasValue) query = query.Where(e => e.TaskId == taskId.Value);
+        if (fromUtc.HasValue) query = query.Where(e => e.TimestampUtc >= fromUtc.Value);
+        if (toUtc.HasValue) query = query.Where(e => e.TimestampUtc <= toUtc.Value);
         return await query.OrderByDescending(e => e.TimestampUtc).Skip(skip).Take(take).ToListAsync(cancellationToken);
     }
 }

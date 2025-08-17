@@ -24,6 +24,7 @@ public class AppDbContext : DbContext
             b.Property(t => t.CreatedAtUtc);
             b.Property(t => t.ParentTaskId);
             b.Property(t => t.UpdatedAtUtc);
+            b.HasIndex(t => t.CreatedAtUtc);
         });
 
         modelBuilder.Entity<TaskEventEntity>(b =>
@@ -31,6 +32,8 @@ public class AppDbContext : DbContext
             b.ToTable("TaskEvents");
             b.HasKey(e => e.Id);
             b.HasIndex(e => e.TaskId);
+            b.HasIndex(e => e.TimestampUtc);
+            b.HasIndex(e => new { e.TaskId, e.TimestampUtc });
             b.Property(e => e.EventType).HasMaxLength(64);
             b.Property(e => e.Status).HasMaxLength(32);
             b.Property(e => e.Message);

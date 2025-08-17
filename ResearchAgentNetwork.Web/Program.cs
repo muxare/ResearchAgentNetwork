@@ -304,12 +304,12 @@ app.MapPost("/api/tasks/{id:guid}/refresh", (Guid id) => Results.Ok(orchestrator
 // All tasks (trimmed, from orchestrator snapshot)
 app.MapGet("/api/tasks", () => orchestrator.GetAllTasks());
 
-// Admin tasks via repository (filters, paging)
-app.MapGet("/admin/tasks", async (ITaskRepository repo, string? status, string? q, int? top, int? skip) =>
+// Admin tasks via repository (filters, paging, time window)
+app.MapGet("/admin/tasks", async (ITaskRepository repo, string? status, string? q, DateTime? fromUtc, DateTime? toUtc, int? top, int? skip) =>
 {
     var take = Math.Clamp(top ?? 100, 1, 1000);
     var sk = Math.Max(0, skip ?? 0);
-    var list = await repo.QueryTasksAsync(status, q, sk, take);
+    var list = await repo.QueryTasksAsync(status, q, fromUtc, toUtc, sk, take);
     return Results.Ok(list);
 });
 
@@ -374,11 +374,11 @@ app.MapGet("/api/tasks/{id:guid}/report/persisted", async (Guid id, IReportRepos
     return Results.Text(r.ReportMarkdown, "text/plain");
 });
 
-app.MapGet("/admin/events", async (IEventRepository repo, Guid? taskId, int? top, int? skip) =>
+app.MapGet("/admin/events", async (IEventRepository repo, Guid? taskId, DateTime? fromUtc, DateTime? toUtc, int? top, int? skip) =>
 {
     var take = Math.Clamp(top ?? 200, 1, 5000);
     var sk = Math.Max(0, skip ?? 0);
-    var list = await repo.QueryEventsAsync(taskId, sk, take);
+    var list = await repo.QueryEventsAsync(taskId, fromUtc, toUtc, sk, take);
     return Results.Ok(list);
 });
 
@@ -552,40 +552,7 @@ static (string? agent, string? detailsJson) ExtractAgentAndDetails(string? messa
     }
 }
 
-static void EnsureTaskEventsColumns(AppDbContext db)
-{
-    var conn = db.Database.GetDbConnection();
-    conn.Open();
-    try
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "PRAGMA table_info('TaskEvents')";
-        var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        using (var reader = cmd.ExecuteReader())
-        {
-            while (reader.Read())
-            {
-                cols.Add(reader.GetString(1)); // name column
-            }
-        }
-        if (!cols.Contains("AgentRole"))
-        {
-            using var alter1 = conn.CreateCommand();
-            alter1.CommandText = "ALTER TABLE TaskEvents ADD COLUMN AgentRole TEXT";
-            alter1.ExecuteNonQuery();
-        }
-        if (!cols.Contains("DetailsJson"))
-        {
-            using var alter2 = conn.CreateCommand();
-            alter2.CommandText = "ALTER TABLE TaskEvents ADD COLUMN DetailsJson TEXT";
-            alter2.ExecuteNonQuery();
-        }
-    }
-    finally
-    {
-        conn.Close();
-    }
-}
+// Removed legacy SQLite column shim; migrations handle schema changes
 
 public record TaskSubmit(string Description, int? Priority);
 public record SettingsDto(int? MaxDecompositionDepth, bool? LogPrompts);

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ResearchAgentNetwork.Persistence;
 
@@ -11,9 +12,11 @@ using ResearchAgentNetwork.Persistence;
 namespace ResearchAgentNetwork.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250817115038_AddHistoryIndexes")]
+    partial class AddHistoryIndexes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -93,8 +96,6 @@ namespace ResearchAgentNetwork.Persistence.Migrations
                     b.HasIndex("TaskId");
 
                     b.HasIndex("TimestampUtc");
-
-                    b.HasIndex("TaskId", "TimestampUtc");
 
                     b.ToTable("TaskEvents", (string)null);
                 });

@@ -52,7 +52,7 @@ public class TaskRepository : ITaskRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<TaskEntity>> QueryTasksAsync(string? status, string? searchTerm, int skip, int take, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<TaskEntity>> QueryTasksAsync(string? status, string? searchTerm, DateTime? fromUtc, DateTime? toUtc, int skip, int take, CancellationToken cancellationToken = default)
     {
         var query = _db.Tasks.AsQueryable();
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(t => t.Status == status);
@@ -61,6 +61,8 @@ public class TaskRepository : ITaskRepository
             var term = searchTerm.ToLower();
             query = query.Where(t => t.Description.ToLower().Contains(term) || t.Id.ToString().ToLower().Contains(term));
         }
+        if (fromUtc.HasValue) query = query.Where(t => t.CreatedAtUtc >= fromUtc.Value);
+        if (toUtc.HasValue) query = query.Where(t => t.CreatedAtUtc <= toUtc.Value);
         return await query.OrderByDescending(t => t.CreatedAtUtc).Skip(skip).Take(take).ToListAsync(cancellationToken);
     }
 }

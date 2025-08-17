@@ -326,6 +326,15 @@ namespace ResearchAgentNetwork
             return (raw, defaultGrpcPort);
         }
 
+        private static string[] ParseAllowlist(string? csv)
+        {
+            if (string.IsNullOrWhiteSpace(csv)) return Array.Empty<string>();
+            return csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => s.ToLowerInvariant())
+                .Distinct()
+                .ToArray();
+        }
+
         private static void PrintTasksSnapshot(ResearchOrchestrator orchestrator, TaskEvent e, bool pause)
         {
             Console.WriteLine();
