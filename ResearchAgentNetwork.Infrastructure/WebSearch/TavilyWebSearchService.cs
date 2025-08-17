@@ -34,7 +34,7 @@ public class TavilyWebSearchService : IWebSearchService
             ["search_depth"] = "basic",
             ["include_answer"] = false,
             ["include_images"] = false,
-            ["include_domains"] = (string[]?)null
+            ["include_domains"] = _includeDomains?.Length > 0 ? _includeDomains : null
         };
 
         using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -64,6 +64,17 @@ public class TavilyWebSearchService : IWebSearchService
         }
 
         return results;
+    }
+
+    private string[]? _includeDomains;
+
+    public TavilyWebSearchService WithIncludeDomains(IEnumerable<string> domains)
+    {
+        _includeDomains = domains?.Where(d => !string.IsNullOrWhiteSpace(d))
+            .Select(d => d.Trim().ToLowerInvariant())
+            .Distinct()
+            .ToArray();
+        return this;
     }
 }
 

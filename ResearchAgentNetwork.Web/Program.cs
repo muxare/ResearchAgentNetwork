@@ -252,11 +252,34 @@ if (enableWebSearch)
     {
         "tavily" => new SKTavilyWebSearchService(builder.Configuration["WebSearch:Tavily:ApiKey"] ?? string.Empty),
         // Use direct Tavily API for richer provenance (title/url)
-        "tavilyapi" => new TavilyWebSearchService(builder.Configuration["WebSearch:Tavily:ApiKey"] ?? string.Empty),
+        "tavilyapi" => new TavilyWebSearchService(builder.Configuration["WebSearch:Tavily:ApiKey"] ?? string.Empty)
+            .WithIncludeDomains(ParseAllowlist(builder.Configuration["WebSearch:Allowlist"])) ,
         _ => new NoOpWebSearchService()
     };
+
+    // Wrap with allowlist and rate limiter as configured
+    var allowlist = ParseAllowlist(builder.Configuration["WebSearch:Allowlist"]);
+    if (allowlist.Length > 0)
+    {
+        webSearchService = new AllowlistedWebSearchService(webSearchService, allowlist);
+    }
+    var rpm = int.TryParse(builder.Configuration["WebSearch:RateLimit:RPM"], out var x) ? x : 30;
+    var minIntervalMs = int.TryParse(builder.Configuration["WebSearch:RateLimit:MinIntervalMs"], out var y) ? y : 500;
+    if (rpm > 0 || minIntervalMs > 0)
+    {
+        webSearchService = new RateLimitedWebSearchService(webSearchService, Math.Max(1, rpm), Math.Max(0, minIntervalMs));
+    }
     var webSearchAgent = new WebSearchAgent(webSearchService, memory);
     orchestrator.SetWebSearchAgent(webSearchAgent);
+}
+
+static string[] ParseAllowlist(string? csv)
+{
+    if (string.IsNullOrWhiteSpace(csv)) return Array.Empty<string>();
+    return csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(s => s.ToLowerInvariant())
+        .Distinct()
+        .ToArray();
 }
 
 app.UseDefaultFiles();

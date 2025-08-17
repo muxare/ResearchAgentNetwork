@@ -179,8 +179,22 @@ namespace ResearchAgentNetwork
                     IWebSearchService webSearchService = searchProvider.ToLower() switch
                     {
                         "tavily" => new SKTavilyWebSearchService(configuration["WebSearch:Tavily:ApiKey"] ?? string.Empty),
+                        "tavilyapi" => new TavilyWebSearchService(configuration["WebSearch:Tavily:ApiKey"] ?? string.Empty)
+                            .WithIncludeDomains(ParseAllowlist(configuration["WebSearch:Allowlist"])),
                         _ => new NoOpWebSearchService()
                     };
+
+                    var allowlist = ParseAllowlist(configuration["WebSearch:Allowlist"]);
+                    if (allowlist.Length > 0)
+                    {
+                        webSearchService = new AllowlistedWebSearchService(webSearchService, allowlist);
+                    }
+                    var rpm = int.TryParse(configuration["WebSearch:RateLimit:RPM"], out var x) ? x : 30;
+                    var minIntervalMs = int.TryParse(configuration["WebSearch:RateLimit:MinIntervalMs"], out var y) ? y : 500;
+                    if (rpm > 0 || minIntervalMs > 0)
+                    {
+                        webSearchService = new RateLimitedWebSearchService(webSearchService, Math.Max(1, rpm), Math.Max(0, minIntervalMs));
+                    }
                     orchestrator.SetWebSearchAgent(new WebSearchAgent(webSearchService, memory));
                 }
 
