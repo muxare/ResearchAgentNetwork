@@ -169,8 +169,21 @@
 
 #### Priority System Improvements
 - [ ] **Depth-First Priority**: Implement depth-first priority assignment for subtasks
+  - **Technical Implementation**:
+    - Add `CalculatePriority(Task task, int depth, TaskContext context)` method to orchestrator
+    - Implement priority formula: `BasePriority + (MaxDepth - depth) * DepthMultiplier`
+    - Add `PriorityAssignmentStrategy` enum: `DepthFirst`, `BreadthFirst`, `Custom`
+    - Store priority calculation logic in `IPriorityCalculator` interface
 - [ ] **Aggregation Priority Boost**: Give aggregation tasks higher priority to complete early
+  - **Technical Implementation**:
+    - Add `AggregationPriorityBoost` configuration setting (default: +2)
+    - Implement priority boost in `AggregatorAgent` when parent task is ready for aggregation
+    - Add `IsAggregationTask(Task task)` helper method
 - [ ] **Dynamic Priority Adjustment**: Adjust priorities based on task dependencies and completion status
+  - **Technical Implementation**:
+    - Create `PriorityAdjustmentService` that monitors task dependencies
+    - Implement `AdjustPriorities()` method called periodically or on dependency changes
+    - Add priority adjustment rules: `BlockedTasks` get lower priority, `ReadyTasks` get higher priority
 
 #### Task Evaluation & Decomposition
 - [ ] **Sophisticated Evaluation Function**: Replace hard-coded split limits with intelligent analysis
@@ -180,15 +193,55 @@
   - **Time Complexity Estimation**: LLM-based time assessment for better decomposition decisions
   - **Out-of-the-box Potential**: Detect creative tasks that benefit from unexpected approaches
   - **Learning from History**: Analyze past similar tasks to predict optimal decomposition
+  - **Technical Implementation**:
+    - Create `ITaskComplexityAnalyzer` interface with `AnalyzeComplexity(TaskDescription)` method
+    - Implement `MultiDimensionalComplexityAnalyzer` using LLM for domain classification
+    - Add complexity factors: `DomainComplexity`, `HumanInvolvement`, `ResourceRequirements`, `TimeEstimate`
+    - Create `ComplexityScore` model with weighted factors and confidence levels
+    - Implement `DecompositionStrategy` enum: `DirectExecution`, `SplitIntoSubtasks`, `RequireApproval`
+    - Add `ShouldDecompose(ComplexityScore, TaskContext)` logic with dynamic thresholds
+    - Store complexity analysis results in `TaskMetadata` for future learning
 - [ ] **Dynamic Split Thresholds**: Adjust decomposition limits based on task type and available resources
+  - **Technical Implementation**:
+    - Create `DecompositionThresholds` configuration with per-domain limits
+    - Implement `ThresholdAdjuster` that considers system load, available agents, and task history
+    - Add adaptive thresholds: `BaseThreshold * DomainMultiplier * LoadMultiplier * HistoryMultiplier`
 
 #### Task Lifecycle & Recovery
-- [ ] **Retry Logic Enhancement**: Ensure parent aggregation considers failed subtasks when retrying
+- [ ] **Smart Retry Logic**: Resume from failure point instead of starting over completely
+  - **Result Preservation**: Leverage existing results and partial progress when retrying
+  - **Failure Point Detection**: Identify exactly where the process stopped and resume from there
+  - **Partial Result Integration**: Incorporate completed work into retry attempts
+  - **Incremental Recovery**: Continue building on existing progress rather than discarding it
+  - **Technical Implementation**:
+    - Store task execution state in `TaskExecutionState` with checkpoints
+    - Implement `IExecutionStateManager` for state persistence and recovery
+    - Add `ResumeFromCheckpoint()` method to orchestrator
+    - Create `ExecutionCheckpoint` model with agent state, partial results, and failure context
+    - Implement state serialization/deserialization for in-memory and future database storage
+    - Add retry strategies: `ResumeFromLastSuccess`, `ResumeFromFailure`, `SkipFailedSubtasks`
 - [ ] **Continue from Shutdown**: Manual continue action for tasks interrupted by system shutdown
+  - **Technical Implementation**:
+    - Add `ShutdownRecoveryService` to detect and catalog interrupted tasks
+    - Implement `GetInterruptedTasks()` endpoint for UI display
+    - Add `ContinueInterruptedTask(Guid taskId)` API endpoint
+    - Store shutdown state in `TaskShutdownState` with timestamp and last known status
 - [ ] **Continue Button**: Add continue functionality alongside retry for stuck pending tasks
-- [ ] **Task Approval Workflow**: New kanban lane for tasks requiring manual approval
+  - **Technical Implementation**:
+    - Add `Continue` action to `TaskAction` enum alongside `Retry`, `ForceExecute`
+    - Implement `ContinueTask(Guid taskId)` in `ResearchOrchestrator`
+    - Add continue button to `TaskCard.svelte` and `TaskDetails.svelte`
+    - Logic: Resume from last successful checkpoint, skip failed subtasks if possible
+- [ ] **Task Approval Workflow**: New kanban column for tasks requiring manual approval
   - **Overflow Task Management**: Handle tasks exceeding max depth as new root tasks with sibling connections
   - **Approval Queue**: Separate lane for tasks waiting for human approval before execution
+  - **Technical Implementation**:
+    - Add `RequiresApproval` status to `TaskStatus` enum
+    - Create `ApprovalRequest` model with requester, reason, and approval criteria
+    - Implement `RequestApproval(Guid taskId, string reason)` API endpoint
+    - Add approval workflow to `TaskAnalyzerAgent` when depth > max depth
+    - Create `ApprovalColumn.svelte` component for the new kanban lane
+    - Add approval actions: `Approve`, `Reject`, `RequestChanges` with comments
 
 ### Agent System Enhancements
 
@@ -198,11 +251,24 @@
   - **Legal Research Prompts**: Expert prompts for legal analysis tasks
   - **Technical Implementation Prompts**: Specialized prompts for technical tasks
   - **Creative Research Prompts**: Prompts optimized for creative and exploratory tasks
+  - **Technical Implementation**:
+    - Create `IPromptGenerator` interface with `GeneratePrompt(Task task, AgentType agentType)` method
+    - Implement `DomainAwarePromptGenerator` using LLM for domain classification
+    - Add `PromptTemplate` model with placeholders for domain-specific content
+    - Create prompt templates for each domain: `MedicalTemplate`, `LegalTemplate`, `TechnicalTemplate`, `CreativeTemplate`
+    - Implement `PromptContext` with task description, domain, complexity, and agent role
+    - Add prompt caching in `PromptCache` to avoid regeneration for similar tasks
 - [ ] **Prompt Generation Strategies**:
   - **Keyword Analysis**: Detect domain-specific terminology
   - **Semantic Classification**: Use embeddings for task domain classification
   - **Context Inference**: Analyze task description and metadata for prompt optimization
   - **Expert Role Assignment**: Assign appropriate expert personas based on task type
+  - **Technical Implementation**:
+    - Create `IDomainClassifier` interface with `ClassifyDomain(TaskDescription)` method
+    - Implement `KeywordBasedClassifier` for fast domain detection
+    - Add `EmbeddingBasedClassifier` for semantic domain classification
+    - Create `ExpertPersona` model with role, expertise, and prompt style
+    - Implement `PersonaSelector` that chooses appropriate expert based on domain and complexity
 
 ### User Interface & Experience
 
@@ -211,8 +277,25 @@
   - **Completed Column Stacking**: Show parent with completed subtasks as a single stacked card
   - **Visual Stack Effect**: Subtle offset backgrounds and (+N) indicators for hidden subtasks
   - **Stack Behavior**: Only apply to completed tasks; other columns show individual cards
+  - **Technical Implementation**:
+    - Add `_stackCount` property to `TaskItem` interface for UI-only stacking data
+    - Implement `TaskStackingService` to calculate which tasks should be stacked
+    - Create `calculateStackedTasks(tasks: TaskItem[])` method in `KanbanBoard.svelte`
+    - Add CSS classes for stacked appearance: `.task-stack`, `.task-stack-background`, `.stack-count-badge`
+    - Implement stacking logic: parent + all completed children = single stacked card
+    - Add stack hover effects to show hidden subtask details
 - [ ] **Approval Lane**: New kanban column for tasks awaiting manual approval
+  - **Technical Implementation**:
+    - Add `ApprovalColumn.svelte` component with approval actions
+    - Create `ApprovalTaskCard.svelte` with approve/reject/revision buttons
+    - Add approval state management in `approvalStore.ts`
+    - Implement approval workflow: `RequestApproval`, `Approve`, `Reject`, `RequestChanges`
 - [ ] **Task Relationship Visualization**: Better display of parent-child and sibling relationships
+  - **Technical Implementation**:
+    - Add relationship indicators to `TaskCard.svelte`: parent/child/sibling icons
+    - Create `TaskRelationshipVisualizer` component for complex relationship trees
+    - Implement relationship data in `TaskItem` interface: `parentId`, `childIds`, `siblingIds`
+    - Add visual connectors between related tasks in the kanban board
 
 #### Data Interaction & Chat
 - [ ] **Chat Interface for Stored Data**: Interactive chat with Qdrant and SQL data
@@ -220,6 +303,15 @@
   - **Vector Database Query**: Natural language queries for semantic memory
   - **SQL Data Exploration**: Chat-based exploration of task and result data
   - **Context-Aware Responses**: Chat responses that understand task relationships and history
+  - **Technical Implementation**:
+    - Create `ChatInterface.svelte` component with chat input and message history
+    - Implement `IChatService` interface with `SendMessage(string message)` method
+    - Create `ResearchDataChatService` that queries Qdrant and SQL data
+    - Add `ChatMessage` model with user input, system response, and data sources
+    - Implement `QueryParser` to convert natural language to structured queries
+    - Add `ResponseGenerator` that formats data into natural language responses
+    - Create chat endpoints: `POST /api/chat`, `GET /api/chat/history`
+    - Implement chat state management in `chatStore.ts` with message history and context
 
 ### Data Storage & Persistence
 
@@ -228,14 +320,41 @@
   - **Entity Framework Implementation**: Proper ORM for data persistence
   - **Data Migration Scripts**: Migrate existing in-memory data to SQL Server
   - **Connection String Management**: Secure database connection configuration
+  - **Technical Implementation**:
+    - Create `AppDbContext` with Entity Framework Core for all domain models
+    - Implement `ITaskRepository`, `IResultRepository`, `IEventRepository` interfaces
+    - Add `TaskEntity`, `ResultEntity`, `EventEntity` with proper relationships
+    - Create `DatabaseMigrationService` to handle in-memory to SQL migration
+    - Implement `IDataPersistenceService` with `SaveTask`, `LoadTask`, `QueryTasks` methods
+    - Add connection string configuration in `appsettings.json` and environment variables
+    - Create database initialization scripts and migration history tracking
 - [ ] **Task Persistence**: Long-term storage of tasks, results, and relationships
+  - **Technical Implementation**:
+    - Implement `TaskPersistenceService` with CRUD operations
+    - Add `TaskQueryService` for complex queries and filtering
+    - Create database indexes for performance: `TaskId`, `Status`, `ParentTaskId`, `CreatedAt`
+    - Implement soft delete with `IsDeleted` flag and audit trail
 - [ ] **Audit Trail**: Complete history of task lifecycle and changes
+  - **Technical Implementation**:
+    - Create `AuditLog` entity with `EntityId`, `EntityType`, `Action`, `Changes`, `Timestamp`
+    - Implement `IAuditService` with `LogChange`, `GetAuditTrail` methods
+    - Add audit logging to all task state changes and agent actions
+    - Create audit query endpoints for compliance and debugging
 
 #### Report Generation
 - [ ] **Report Creator Agent Tasks**: Dedicated tasks for report generation agents
   - **Report Template System**: Structured report generation based on task type
   - **Citation Management**: Automated citation and source tracking
   - **Format Export**: Multiple output formats (Markdown, HTML, PDF)
+  - **Technical Implementation**:
+    - Create `IReportGenerator` interface with `GenerateReport(Task task, ReportFormat format)` method
+    - Implement `ReportTemplateEngine` for dynamic template generation
+    - Add `ReportTemplate` model with sections, formatting, and domain-specific rules
+    - Create `CitationManager` service for automated source tracking and citation generation
+    - Implement `ReportFormatter` for multiple output formats: Markdown, HTML, PDF
+    - Add report generation endpoints: `GET /api/tasks/{id}/report?format={format}`
+    - Create `ReportPreview` component for real-time report preview in the UI
+    - Implement report versioning with `ReportVersion` and change tracking
 
 ## 📈 Success Metrics
 
@@ -271,6 +390,238 @@
 - [ ] **Environment Management**: Development, staging, and production
 - [ ] **Rollback Procedures**: Quick rollback capabilities
 - [ ] **Monitoring**: Real-time application monitoring and alerting
+
+## 🤖 AI Development Guidelines
+
+### Implementation Patterns & Templates
+- [ ] **Service Pattern**: Always implement interfaces (`IService`) with concrete implementations (`Service`)
+- [ ] **Dependency Injection**: Use constructor injection for all dependencies
+- [ ] **Async/Await**: Use `Task<T>` return types and `async`/`await` consistently
+- [ ] **Error Handling**: Wrap operations in try-catch with proper logging and user feedback
+- [ ] **Configuration**: Use `IOptions<T>` pattern for strongly-typed configuration
+
+### Code Structure Templates
+```csharp
+// Service Interface Template
+public interface IServiceName
+{
+    Task<ResultType> MethodNameAsync(ParameterType parameter, CancellationToken ct = default);
+}
+
+// Service Implementation Template
+public class ServiceName : IServiceName
+{
+    private readonly ILogger<ServiceName> _logger;
+    private readonly IDependencyService _dependency;
+
+    public ServiceName(ILogger<ServiceName> logger, IDependencyService dependency)
+    {
+        _logger = logger;
+        _dependency = dependency;
+    }
+
+    public async Task<ResultType> MethodNameAsync(ParameterType parameter, CancellationToken ct = default)
+    {
+        try
+        {
+            _logger.LogInformation("Starting {MethodName} with {Parameter}", nameof(MethodNameAsync), parameter);
+            
+            // Implementation logic here
+            
+            _logger.LogInformation("Completed {MethodName} successfully", nameof(MethodNameAsync));
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in {MethodName} with {Parameter}", nameof(MethodNameAsync), parameter);
+            throw;
+        }
+    }
+}
+```
+
+### Testing Templates
+```csharp
+// Unit Test Template
+[TestClass]
+public class ServiceNameTests
+{
+    private Mock<IDependencyService> _mockDependency;
+    private ILogger<ServiceName> _logger;
+    private ServiceName _service;
+
+    [TestInitialize]
+    public void Setup()
+    {
+        _mockDependency = new Mock<IDependencyService>();
+        _logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<ServiceName>();
+        _service = new ServiceName(_logger, _mockDependency.Object);
+    }
+
+    [TestMethod]
+    public async Task MethodName_WithValidInput_ShouldReturnExpectedResult()
+    {
+        // Arrange
+        var parameter = new ParameterType();
+        var expectedResult = new ResultType();
+        _mockDependency.Setup(x => x.Method(parameter)).ReturnsAsync(expectedResult);
+
+        // Act
+        var result = await _service.MethodNameAsync(parameter);
+
+        // Assert
+        Assert.IsNotNull(result);
+        Assert.AreEqual(expectedResult, result);
+        _mockDependency.Verify(x => x.Method(parameter), Times.Once);
+    }
+}
+```
+
+### Frontend Component Templates
+```typescript
+// Svelte Component Template
+<script lang="ts">
+  import { onMount } from 'svelte';
+  
+  // Props
+  export let propName: string;
+  
+  // Local state
+  let localState: string = '';
+  
+  // Lifecycle
+  onMount(() => {
+    // Component initialization
+  });
+  
+  // Methods
+  function handleAction() {
+    // Action logic
+  }
+</script>
+
+<div class="component-name">
+  <h3>{propName}</h3>
+  <input bind:value={localState} />
+  <button on:click={handleAction}>Action</button>
+</div>
+
+<style>
+  .component-name {
+    @apply p-4 border rounded;
+  }
+</style>
+```
+
+### Development Workflow for AI
+1. **Analysis Phase**: 
+   - Read existing code to understand patterns
+   - Identify interfaces and dependencies
+   - Check existing tests for testing patterns
+2. **Implementation Phase**:
+   - Follow established naming conventions
+   - Use existing service patterns
+   - Implement comprehensive error handling
+3. **Testing Phase**:
+   - Write unit tests following existing patterns
+   - Ensure test coverage >90%
+   - Test error scenarios and edge cases
+4. **Integration Phase**:
+   - Register services in DI container
+   - Update configuration files
+   - Add API endpoints if needed
+5. **Documentation Phase**:
+   - Update XML documentation
+   - Add inline comments for complex logic
+   - Update relevant documentation files
+
+### Common Implementation Patterns
+- [ ] **Repository Pattern**: Use for data access with `IRepository<T>` interfaces
+- [ ] **Factory Pattern**: Use `IFactory<T>` for complex object creation
+- [ ] **Strategy Pattern**: Use for different algorithms (e.g., `IPriorityCalculator`)
+- [ ] **Observer Pattern**: Use events and `IObserver<T>` for state changes
+- [ ] **Command Pattern**: Use for undoable operations and audit trails
+
+### Error Handling Standards
+```csharp
+// Standard error handling pattern
+try
+{
+    var result = await _service.OperationAsync();
+    return result;
+}
+catch (ValidationException ex)
+{
+    _logger.LogWarning(ex, "Validation failed for {Operation}", nameof(OperationAsync));
+    throw new UserFriendlyException("Invalid input provided", ex);
+}
+catch (NotFoundException ex)
+{
+    _logger.LogInformation(ex, "Resource not found for {Operation}", nameof(OperationAsync));
+    throw new UserFriendlyException("Requested resource not found", ex);
+}
+catch (Exception ex)
+{
+    _logger.LogError(ex, "Unexpected error in {Operation}", nameof(OperationAsync));
+    throw new UserFriendlyException("An unexpected error occurred", ex);
+}
+```
+
+### Configuration Management
+```json
+// Configuration template
+{
+  "ServiceName": {
+    "Setting1": "value1",
+    "Setting2": "value2",
+    "TimeoutSeconds": 30
+  }
+}
+```
+
+```csharp
+// Configuration class template
+public class ServiceNameOptions
+{
+    public const string SectionName = "ServiceName";
+    
+    public string Setting1 { get; set; } = string.Empty;
+    public string Setting2 { get; set; } = string.Empty;
+    public int TimeoutSeconds { get; set; } = 30;
+}
+```
+
+### API Endpoint Templates
+```csharp
+// Controller template
+[ApiController]
+[Route("api/[controller]")]
+public class ServiceNameController : ControllerBase
+{
+    private readonly IServiceName _service;
+    private readonly ILogger<ServiceNameController> _logger;
+
+    public ServiceNameController(IServiceName service, ILogger<ServiceNameController> logger)
+    {
+        _service = service;
+        _logger = logger;
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<ResultType>> CreateAsync([FromBody] CreateRequest request)
+    {
+        try
+        {
+            var result = await _service.CreateAsync(request);
+            return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+}
+```
 
 ## 📝 Notes
 

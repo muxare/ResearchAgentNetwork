@@ -1,0 +1,5 @@
+---
+description: Allways adhere to the AI Development Guidelines in the todo.md
+globs:
+alwaysApply: true
+---
