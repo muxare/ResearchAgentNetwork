@@ -219,19 +219,11 @@ orchestrator.TaskEventPublished += async (e) =>
     }
     catch { }
 };
-// EF: apply migrations on startup (simple EnsureCreated for now)
+// EF: apply migrations on startup
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
-    if (db.Database.IsSqlite())
-    {
-        try
-        {
-            EnsureTaskEventsColumns(db);
-        }
-        catch { }
-    }
+    db.Database.Migrate();
 }
 // Initialize LLM logger now that app services are available
 KernelExtensionsApp.Logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("LLM");
@@ -287,36 +279,14 @@ app.MapGet("/api/dbinfo", () => new
 });
 
 // Submit task
-app.MapPost("/api/tasks", async (TaskSubmit req, AppDbContext db) =>
+app.MapPost("/api/tasks", async (TaskSubmit req, ITaskRepository tasksRepo) =>
 {
     var id = await orchestrator.SubmitResearchTask(req.Description, req.Priority ?? 5);
     // Persist or update task row (basic fields)
     var t = orchestrator.GetTaskStatus(id);
     if (t != null)
     {
-        var existing = await db.Tasks.FindAsync(id);
-        if (existing == null)
-        {
-            db.Tasks.Add(new TaskEntity
-            {
-                Id = t.Id,
-                Description = t.Description,
-                Priority = t.Priority,
-                Status = t.Status.ToString(),
-                CreatedAtUtc = t.CreatedAt,
-                UpdatedAtUtc = DateTime.UtcNow,
-                ParentTaskId = t.ParentTaskId
-            });
-        }
-        else
-        {
-            existing.Description = t.Description;
-            existing.Priority = t.Priority;
-            existing.Status = t.Status.ToString();
-            existing.UpdatedAtUtc = DateTime.UtcNow;
-            existing.ParentTaskId = t.ParentTaskId;
-        }
-        await db.SaveChangesAsync();
+        await tasksRepo.UpsertTaskSnapshotAsync(t);
     }
     return Results.Ok(new { id });
 });
@@ -331,8 +301,17 @@ app.MapGet("/api/tasks/{id:guid}", (Guid id) =>
 // Debug endpoint to refresh a single task status (forces re-fetch from orchestrator only)
 app.MapPost("/api/tasks/{id:guid}/refresh", (Guid id) => Results.Ok(orchestrator.GetTaskStatus(id)));
 
-// All tasks (trimmed)
+// All tasks (trimmed, from orchestrator snapshot)
 app.MapGet("/api/tasks", () => orchestrator.GetAllTasks());
+
+// Admin tasks via repository (filters, paging)
+app.MapGet("/admin/tasks", async (ITaskRepository repo, string? status, string? q, int? top, int? skip) =>
+{
+    var take = Math.Clamp(top ?? 100, 1, 1000);
+    var sk = Math.Max(0, skip ?? 0);
+    var list = await repo.QueryTasksAsync(status, q, sk, take);
+    return Results.Ok(list);
+});
 
 // Children
 app.MapGet("/api/tasks/{id:guid}/children", (Guid id) => Results.Ok(orchestrator.GetChildren(id)));
@@ -351,7 +330,7 @@ app.MapGet("/api/tasks/{id:guid}/report", (Guid id) =>
 });
 
 // Events for a task (Phase 1 timeline API)
-app.MapGet("/api/tasks/{id:guid}/events", async (Guid id, bool? includeChildren, int? top, int? skip, AppDbContext db) =>
+app.MapGet("/api/tasks/{id:guid}/events", async (Guid id, bool? includeChildren, int? top, int? skip, ITaskRepository tasksRepo, IEventRepository eventsRepo) =>
 {
     var include = includeChildren ?? false;
     var take = Math.Clamp(top ?? 500, 1, 5000);
@@ -366,7 +345,7 @@ app.MapGet("/api/tasks/{id:guid}/events", async (Guid id, bool? includeChildren,
         while (queue.Count > 0)
         {
             var cur = queue.Dequeue();
-            var children = await db.Tasks.Where(t => t.ParentTaskId == cur).Select(t => t.Id).ToListAsync();
+            var children = await tasksRepo.GetChildrenIdsAsync(cur);
             foreach (var cid in children)
             {
                 if (ids.Add(cid)) queue.Enqueue(cid);
@@ -374,78 +353,45 @@ app.MapGet("/api/tasks/{id:guid}/events", async (Guid id, bool? includeChildren,
         }
     }
 
-    var events = await db.TaskEvents
-        .Where(e => ids.Contains(e.TaskId))
-        .OrderBy(e => e.TimestampUtc)
-        .Skip(sk)
-        .Take(take)
-        .ToListAsync();
+    var events = await eventsRepo.GetEventsAsync(ids, sk, take);
 
     return Results.Ok(events);
 });
 
 // Persist report
-app.MapPost("/api/tasks/{id:guid}/report", async (Guid id, AppDbContext db) =>
+app.MapPost("/api/tasks/{id:guid}/report", async (Guid id, IReportRepository reportsRepo) =>
 {
     var md = orchestrator.GenerateTaskReport(id);
-    var existing = await db.TaskReports.FindAsync(id);
-    if (existing == null)
-    {
-        db.TaskReports.Add(new TaskReportEntity { TaskId = id, ReportMarkdown = md, GeneratedAtUtc = DateTime.UtcNow });
-    }
-    else
-    {
-        existing.ReportMarkdown = md;
-        existing.GeneratedAtUtc = DateTime.UtcNow;
-    }
-    await db.SaveChangesAsync();
+    await reportsRepo.UpsertReportAsync(id, md, DateTime.UtcNow);
     return Results.Ok(new { id, saved = true });
 });
 
 // Get persisted report (latest)
-app.MapGet("/api/tasks/{id:guid}/report/persisted", async (Guid id, AppDbContext db) =>
+app.MapGet("/api/tasks/{id:guid}/report/persisted", async (Guid id, IReportRepository reportsRepo) =>
 {
-    var r = await db.TaskReports.FindAsync(id);
+    var r = await reportsRepo.GetAsync(id);
     if (r == null) return Results.NotFound();
     return Results.Text(r.ReportMarkdown, "text/plain");
 });
 
-// Admin APIs
-app.MapGet("/admin/tasks", async (AppDbContext db, string? status, string? q, int? top, int? skip) =>
+app.MapGet("/admin/events", async (IEventRepository repo, Guid? taskId, int? top, int? skip) =>
 {
-    var query = db.Tasks.AsQueryable();
-    if (!string.IsNullOrWhiteSpace(status)) query = query.Where(t => t.Status == status);
-    if (!string.IsNullOrWhiteSpace(q))
-    {
-        var term = q.ToLower();
-        query = query.Where(t => t.Description.ToLower().Contains(term) || t.Id.ToString().ToLower().Contains(term));
-    }
-    var take = Math.Clamp(top ?? 100, 1, 1000);
-    var sk = Math.Max(0, skip ?? 0);
-    var list = await query.OrderByDescending(t => t.CreatedAtUtc).Skip(sk).Take(take).ToListAsync();
-    return Results.Ok(list);
-});
-
-app.MapGet("/admin/events", async (AppDbContext db, Guid? taskId, int? top, int? skip) =>
-{
-    var query = db.TaskEvents.AsQueryable();
-    if (taskId.HasValue) query = query.Where(e => e.TaskId == taskId.Value);
     var take = Math.Clamp(top ?? 200, 1, 5000);
     var sk = Math.Max(0, skip ?? 0);
-    var list = await query.OrderByDescending(e => e.TimestampUtc).Skip(sk).Take(take).ToListAsync();
+    var list = await repo.QueryEventsAsync(taskId, sk, take);
     return Results.Ok(list);
 });
 
-app.MapGet("/admin/reports/{id:guid}.md", async (Guid id, AppDbContext db) =>
+app.MapGet("/admin/reports/{id:guid}.md", async (Guid id, IReportRepository reportsRepo) =>
 {
-    var r = await db.TaskReports.FindAsync(id);
+    var r = await reportsRepo.GetAsync(id);
     if (r == null) return Results.NotFound();
     return Results.Text(r.ReportMarkdown, "text/markdown");
 });
 
-app.MapGet("/admin/reports/{id:guid}/download", async (Guid id, AppDbContext db) =>
+app.MapGet("/admin/reports/{id:guid}/download", async (Guid id, IReportRepository reportsRepo) =>
 {
-    var r = await db.TaskReports.FindAsync(id);
+    var r = await reportsRepo.GetAsync(id);
     if (r == null) return Results.NotFound();
     var bytes = System.Text.Encoding.UTF8.GetBytes(r.ReportMarkdown);
     return Results.File(bytes, "text/markdown", fileDownloadName: $"report-{id}.md");
