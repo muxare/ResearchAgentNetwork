@@ -14,6 +14,7 @@ using ResearchAgentNetwork.Persistence.Entities;
 using System.Text.Json.Serialization;
 using ResearchAgentNetwork.WebSearch;
 using ResearchAgentNetwork.Infrastructure.WebSearch;
+using ResearchAgentNetwork.Persistence.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 // Persistence (configurable: SqlServer or Sqlite)
@@ -177,41 +178,29 @@ orchestrator.TaskEventPublished += (e) =>
 };
 
 // Persist events and final reports automatically
+// Register repositories (must occur before Build)
+builder.Services.AddScoped<ITaskRepository, TaskRepository>();
+builder.Services.AddScoped<IEventRepository, EventRepository>();
+builder.Services.AddScoped<IReportRepository, ReportRepository>();
+
+var app = builder.Build();
+
+// Persist events and final reports automatically (registered after DI container is built)
 orchestrator.TaskEventPublished += async (e) =>
 {
     try
     {
-        using var scope = builder.Services.BuildServiceProvider().CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        // Upsert task snapshot on event
+        using var scope = app.Services.CreateScope();
+        var taskRepo = scope.ServiceProvider.GetRequiredService<ITaskRepository>();
+        var eventRepo = scope.ServiceProvider.GetRequiredService<IEventRepository>();
+        var reportRepo = scope.ServiceProvider.GetRequiredService<IReportRepository>();
         var t = orchestrator.GetTaskStatus(e.TaskId);
         if (t != null)
         {
-            var te = await db.Tasks.FindAsync(t.Id);
-            if (te == null)
-            {
-                db.Tasks.Add(new TaskEntity
-                {
-                    Id = t.Id,
-                    Description = t.Description,
-                    Priority = t.Priority,
-                    Status = t.Status.ToString(),
-                    CreatedAtUtc = t.CreatedAt,
-                    UpdatedAtUtc = DateTime.UtcNow,
-                    ParentTaskId = t.ParentTaskId
-                });
-            }
-            else
-            {
-                te.Description = t.Description;
-                te.Priority = t.Priority;
-                te.Status = t.Status.ToString();
-                te.UpdatedAtUtc = DateTime.UtcNow;
-                te.ParentTaskId = t.ParentTaskId;
-            }
+            await taskRepo.UpsertTaskSnapshotAsync(t);
         }
         var (agent, details) = ExtractAgentAndDetails(e.Message);
-        db.TaskEvents.Add(new TaskEventEntity
+        await eventRepo.AddEventAsync(new TaskEventEntity
         {
             TaskId = e.TaskId,
             EventType = e.EventType,
@@ -221,28 +210,15 @@ orchestrator.TaskEventPublished += async (e) =>
             AgentRole = agent,
             DetailsJson = details
         });
-        await db.SaveChangesAsync();
 
         if (e.EventType == "completed" || e.EventType == "failed")
         {
             var md = orchestrator.GenerateTaskReport(e.TaskId);
-            var existing = await db.TaskReports.FindAsync(e.TaskId);
-            if (existing == null)
-            {
-                db.TaskReports.Add(new TaskReportEntity { TaskId = e.TaskId, ReportMarkdown = md, GeneratedAtUtc = DateTime.UtcNow });
-            }
-            else
-            {
-                existing.ReportMarkdown = md;
-                existing.GeneratedAtUtc = DateTime.UtcNow;
-            }
-            await db.SaveChangesAsync();
+            await reportRepo.UpsertReportAsync(e.TaskId, md, DateTime.UtcNow);
         }
     }
     catch { }
 };
-
-var app = builder.Build();
 // EF: apply migrations on startup (simple EnsureCreated for now)
 using (var scope = app.Services.CreateScope())
 {
