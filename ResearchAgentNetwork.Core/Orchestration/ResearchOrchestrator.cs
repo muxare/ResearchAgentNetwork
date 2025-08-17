@@ -342,6 +342,8 @@ public class ResearchOrchestrator
                         {
                             queries = plan.Queries;
                             Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "agent_decision", Message = JsonMsg(new { agent = "query_planner", queries = queries }) });
+                            // Save planned queries for downstream agents (e.g., web search)
+                            task.Metadata["PlannedQueries"] = queries;
                         }
                         // Try vector retrieval using best query first
                         var retrieved = new List<RetrievedItem>();

@@ -21,54 +21,65 @@ public class WebSearchAgent : IResearchAgent
     {
         try
         {
-            var query = task.Description;
-            if (string.IsNullOrWhiteSpace(query))
+            // Use planned queries if present; otherwise default to task description
+            var queries = new List<string>();
+            if (task.Metadata.TryGetValue("PlannedQueries", out var pq) && pq is List<string> planned && planned.Count > 0)
+            {
+                queries = planned;
+            }
+            else if (!string.IsNullOrWhiteSpace(task.Description))
+            {
+                queries = new List<string> { task.Description };
+            }
+            if (queries.Count == 0)
             {
                 return new AgentResponse { Success = false, Message = "Empty query" };
             }
 
-            var results = await _webSearchService.SearchAsync(query, topK: 5);
-            if (results.Count == 0)
-            {
-                return new AgentResponse { Success = true, Message = "No results" };
-            }
-
             // Collect items with provenance for execution context
             var items = new List<RetrievedItem>();
-            foreach (var r in results)
+            int totalFetched = 0;
+            foreach (var query in queries)
             {
-                var text = (r.Snippet ?? string.Empty).Trim();
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    items.Add(new RetrievedItem(
-                        Kind: "web",
-                        Snippet: text,
-                        Title: r.Title,
-                        Url: r.Url,
-                        Score: null,
-                        ChunkIndex: null,
-                        TotalChunks: null
-                    ));
-                }
+                var results = await _webSearchService.SearchAsync(query, topK: 5);
+                totalFetched += results.Count;
+                if (results.Count == 0) continue;
 
-                // Opportunistically index into vector memory if available
-                if (_memory != null && !string.IsNullOrWhiteSpace(text))
+                foreach (var r in results)
                 {
-                    var rr = new ResearchResult
+                    var text = (r.Snippet ?? string.Empty).Trim();
+                    if (!string.IsNullOrWhiteSpace(text))
                     {
-                        Content = text,
-                        Sources = new List<string> { r.Url },
-                        ConfidenceScore = 0.0,
-                        RequiresAdditionalResearch = false,
-                        Metadata = new Dictionary<string, object>
+                        items.Add(new RetrievedItem(
+                            Kind: "web",
+                            Snippet: text,
+                            Title: r.Title,
+                            Url: r.Url,
+                            Score: null,
+                            ChunkIndex: null,
+                            TotalChunks: null
+                        ));
+                    }
+
+                    // Opportunistically index into vector memory if available
+                    if (_memory != null && !string.IsNullOrWhiteSpace(text))
+                    {
+                        var rr = new ResearchResult
                         {
-                            ["sourceTitle"] = r.Title ?? string.Empty,
-                            ["sourceUrl"] = r.Url ?? string.Empty,
-                            ["ingestedFrom"] = "websearch"
-                        }
-                    };
-                    // Fire and forget to avoid blocking hot path
-                    _ = _memory.IndexResultAsync(task, rr);
+                            Content = text,
+                            Sources = new List<string> { r.Url },
+                            ConfidenceScore = 0.0,
+                            RequiresAdditionalResearch = false,
+                            Metadata = new Dictionary<string, object>
+                            {
+                                ["sourceTitle"] = r.Title ?? string.Empty,
+                                ["sourceUrl"] = r.Url ?? string.Empty,
+                                ["ingestedFrom"] = "websearch"
+                            }
+                        };
+                        // Fire and forget to avoid blocking hot path
+                        _ = _memory.IndexResultAsync(task, rr);
+                    }
                 }
             }
 
@@ -77,7 +88,7 @@ public class WebSearchAgent : IResearchAgent
                 task.Metadata["RetrievedContext"] = items;
             }
 
-            return new AgentResponse { Success = true, Message = $"Fetched {results.Count} results", Data = results };
+            return new AgentResponse { Success = true, Message = $"Fetched {totalFetched} results", Data = null };
         }
         catch (Exception ex)
         {

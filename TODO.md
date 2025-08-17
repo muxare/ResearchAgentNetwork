@@ -56,7 +56,7 @@
 
 #### Web Search Features
 - [x] **Basic Web Search**: Tavily integration working
-- [ ] **Query Planning**: Advanced query planning for web search
+- [x] **Query Planning**: Advanced query planning for web search
 - [ ] **Rate Limiting**: Web search rate limiting and allowlisting
 
 ### ❌ Not Yet Implemented
@@ -112,6 +112,11 @@
 - [ ] **Query Planning**: Intelligent web search query generation
 - [ ] **Result Ranking**: Better result relevance scoring
 - [ ] **Context Enrichment**: Enhanced context building for tasks
+
+#### 3.1.1 Configurable Retrieval Parameters (Follow-up)
+- [ ] Externalize MMR parameters to configuration
+  - `VectorDb:Retrieval:MMR:Alpha` (default 0.7)
+  - `VectorDb:Retrieval:MMR:ThresholdRatio` (default 0.7)
 
 #### 3.2 User Experience
 - [ ] **Advanced UI Features**: Enhanced task visualization
