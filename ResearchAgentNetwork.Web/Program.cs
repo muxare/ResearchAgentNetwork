@@ -16,10 +16,24 @@ using ResearchAgentNetwork.WebSearch;
 using ResearchAgentNetwork.Infrastructure.WebSearch;
 
 var builder = WebApplication.CreateBuilder(args);
-// Persistence
-var dbPath = Path.Combine(builder.Environment.ContentRootPath, "ran.db");
-builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlite($"Data Source={dbPath}"));
-Console.WriteLine($"📦 Sqlite DB path: {dbPath}");
+// Persistence (configurable: SqlServer or Sqlite)
+string dbProvider = builder.Configuration["Database:Provider"] ?? "Sqlite";
+string? sqlitePath = null;
+string? sqlServerConnectionString = null;
+if (string.Equals(dbProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
+{
+    sqlServerConnectionString = builder.Configuration["Database:ConnectionString"]
+        ?? builder.Configuration.GetConnectionString("Default")
+        ?? "Server=localhost;Database=ResearchAgentNetwork;Trusted_Connection=True;TrustServerCertificate=True;";
+    builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlServer(sqlServerConnectionString));
+    Console.WriteLine("📦 Using SQL Server for persistence");
+}
+else
+{
+    sqlitePath = Path.Combine(builder.Environment.ContentRootPath, "ran.db");
+    builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlite($"Data Source={sqlitePath}"));
+    Console.WriteLine($"📦 Sqlite DB path: {sqlitePath}");
+}
 
 // Logging
 builder.Logging.ClearProviders();
@@ -234,11 +248,14 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
-    try
+    if (db.Database.IsSqlite())
     {
-        EnsureTaskEventsColumns(db);
+        try
+        {
+            EnsureTaskEventsColumns(db);
+        }
+        catch { }
     }
-    catch { }
 }
 // Initialize LLM logger now that app services are available
 KernelExtensionsApp.Logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("LLM");
@@ -286,7 +303,12 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 // DB info (debug)
-app.MapGet("/api/dbinfo", () => new { path = dbPath, exists = System.IO.File.Exists(dbPath) });
+app.MapGet("/api/dbinfo", () => new
+{
+    provider = dbProvider,
+    sqlite = sqlitePath is null ? null : new { path = sqlitePath, exists = System.IO.File.Exists(sqlitePath) },
+    sqlserver = sqlServerConnectionString is null ? null : new { connectionString = sqlServerConnectionString }
+});
 
 // Submit task
 app.MapPost("/api/tasks", async (TaskSubmit req, AppDbContext db) =>
