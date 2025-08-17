@@ -51,8 +51,8 @@
 
 #### Vector Database Features
 - [x] **Qdrant Backend**: Fully implemented
-- [ ] **Advanced Similarity**: Semantic similarity detection needs refinement
-- [ ] **Task Deduplication**: Similarity-based task merging needs enhancement
+- [x] **Advanced Similarity**: Semantic similarity detection needs refinement
+- [x] **Task Deduplication**: Similarity-based task merging needs enhancement
 
 #### Web Search Features
 - [x] **Basic Web Search**: Tavily integration working

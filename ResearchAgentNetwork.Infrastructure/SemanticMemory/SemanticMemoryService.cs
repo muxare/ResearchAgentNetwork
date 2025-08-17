@@ -68,17 +68,26 @@ public class SemanticMemoryService : ISemanticMemoryService
     public async Task<IReadOnlyList<VectorQueryResult>> RetrieveSimilarResultsAsync(string query, int topK = 5, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(query)) return Array.Empty<VectorQueryResult>();
-        var vector = await _embeddingService.EmbedAsync(query, cancellationToken);
-        var results = await _vectorStore.QueryAsync(ResultsCollection, vector, topK, includePayload: true, cancellationToken: cancellationToken);
-        return results;
+        var queryVector = await _embeddingService.EmbedAsync(query, cancellationToken);
+        // Fetch a larger candidate set to enable advanced reranking
+        var initialTop = Math.Max(10, topK * 5);
+        var initial = await _vectorStore.QueryAsync(ResultsCollection, queryVector, initialTop, includePayload: true, cancellationToken: cancellationToken);
+        if (initial.Count == 0) return initial;
+
+        var reranked = await RerankWithMmrAsync(queryVector, initial, topK, cancellationToken);
+        return reranked;
     }
 
     public async Task<IReadOnlyList<VectorQueryResult>> RetrieveSimilarTasksAsync(string query, int topK = 5, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(query)) return Array.Empty<VectorQueryResult>();
-        var vector = await _embeddingService.EmbedAsync(query, cancellationToken);
-        var results = await _vectorStore.QueryAsync(TasksCollection, vector, topK, includePayload: true, cancellationToken: cancellationToken);
-        return results;
+        var queryVector = await _embeddingService.EmbedAsync(query, cancellationToken);
+        var initialTop = Math.Max(10, topK * 5);
+        var initial = await _vectorStore.QueryAsync(TasksCollection, queryVector, initialTop, includePayload: true, cancellationToken: cancellationToken);
+        if (initial.Count == 0) return initial;
+
+        var reranked = await RerankWithMmrAsync(queryVector, initial, topK, cancellationToken);
+        return reranked;
     }
     private static IEnumerable<string> Chunk(string text, int maxChars, int overlap)
     {
@@ -94,6 +103,99 @@ public class SemanticMemoryService : ISemanticMemoryService
             start = start + len - overlap;
             if (start < 0 || start >= text.Length) break;
         }
+    }
+
+    private static double CosineSimilarity(IReadOnlyList<float> a, IReadOnlyList<float> b)
+    {
+        if (a.Count != b.Count || a.Count == 0) return 0.0;
+        double dot = 0.0;
+        double na = 0.0;
+        double nb = 0.0;
+        for (int i = 0; i < a.Count; i++)
+        {
+            var va = a[i];
+            var vb = b[i];
+            dot += va * vb;
+            na += va * va;
+            nb += vb * vb;
+        }
+        if (na == 0 || nb == 0) return 0.0;
+        return dot / (Math.Sqrt(na) * Math.Sqrt(nb));
+    }
+
+    private async Task<IReadOnlyList<VectorQueryResult>> RerankWithMmrAsync(
+        float[] queryVector,
+        IReadOnlyList<VectorQueryResult> initial,
+        int topK,
+        CancellationToken ct)
+    {
+        // Keep only candidates that have payload text to re-embed
+        var candidates = initial
+            .Where(r => !string.IsNullOrWhiteSpace(r.Payload))
+            .Take(Math.Min(Math.Max(10, topK * 5), 50))
+            .ToList();
+        if (candidates.Count == 0) return initial.Take(topK).ToList();
+
+        var payloads = candidates.Select(c => c.Payload!).ToList();
+        var embeddings = await _embeddingService.EmbedBatchAsync(payloads, ct);
+        var relevance = embeddings.Select(e => CosineSimilarity(queryVector, e)).ToArray();
+
+        // Dynamic threshold: keep items within 70% of max relevance
+        var maxRel = relevance.Length > 0 ? relevance.Max() : 0.0;
+        var minKeep = maxRel * 0.7;
+        var filtered = new List<(int idx, double rel)>();
+        for (int i = 0; i < relevance.Length; i++)
+        {
+            if (relevance[i] >= minKeep)
+            {
+                filtered.Add((i, relevance[i]));
+            }
+        }
+        if (filtered.Count == 0) return initial.Take(topK).ToList();
+
+        // Precompute pairwise similarities for redundancy
+        var vecs = embeddings.ToArray();
+        var selected = new List<int>();
+        var remaining = new HashSet<int>(filtered.Select(f => f.idx));
+        double alpha = 0.7; // relevance vs diversity trade-off
+
+        while (selected.Count < topK && remaining.Count > 0)
+        {
+            int bestIdx = -1;
+            double bestScore = double.NegativeInfinity;
+            foreach (var i in remaining)
+            {
+                double rel = relevance[i];
+                double red = 0.0;
+                if (selected.Count > 0)
+                {
+                    foreach (var j in selected)
+                    {
+                        red = Math.Max(red, CosineSimilarity(vecs[i], vecs[j]));
+                    }
+                }
+                double score = alpha * rel - (1 - alpha) * red;
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestIdx = i;
+                }
+            }
+            if (bestIdx == -1) break;
+            selected.Add(bestIdx);
+            remaining.Remove(bestIdx);
+        }
+
+        // Materialize results in selected order, using our relevance as the score for consistency
+        var ordered = selected
+            .Select(i =>
+            {
+                var r = candidates[i];
+                return new VectorQueryResult(r.Id, relevance[i], r.Payload, r.Metadata);
+            })
+            .ToList();
+
+        return ordered;
     }
 }
 

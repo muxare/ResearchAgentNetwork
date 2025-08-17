@@ -1,0 +1,5 @@
+---
+description: Look for official implementations and framework/lib functionality for the todo you are implementing
+globs:
+alwaysApply: true
+---

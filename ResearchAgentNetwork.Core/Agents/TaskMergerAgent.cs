@@ -1,9 +1,17 @@
 using Microsoft.SemanticKernel;
+using ResearchAgentNetwork.SemanticMemory;
 
 namespace ResearchAgentNetwork;
 
 public class TaskMergerAgent : IResearchAgent
 {
+    private readonly ISemanticMemoryService? _memory;
+
+    public TaskMergerAgent(ISemanticMemoryService? memory = null)
+    {
+        _memory = memory;
+    }
+
     public string Role => "TaskMerger";
 
     public async Task<AgentResponse> ProcessAsync(ResearchTask task, Kernel kernel)
@@ -19,9 +27,20 @@ public class TaskMergerAgent : IResearchAgent
         return new AgentResponse { Success = true };
     }
 
-    private Task<List<ResearchTask>> FindSimilarTasks(ResearchTask task)
+    private async Task<List<ResearchTask>> FindSimilarTasks(ResearchTask task)
     {
-        return Task.FromResult(new List<ResearchTask>());
+        if (_memory == null || string.IsNullOrWhiteSpace(task.Description))
+        {
+            return new List<ResearchTask>();
+        }
+        var results = await _memory.RetrieveSimilarTasksAsync(task.Description, topK: 5);
+        var matches = results
+            .Select(r => r.Id)
+            .Distinct()
+            .Select(id => id)
+            .ToList();
+        // The agent doesn't have access to the orchestrator registry; return empty and let orchestrator handle actual merge
+        return new List<ResearchTask>();
     }
 
     private async Task<ResearchTask> MergeTasks(ResearchTask task, List<ResearchTask> similarTasks, Kernel kernel)

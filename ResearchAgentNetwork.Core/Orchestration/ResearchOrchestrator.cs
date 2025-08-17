@@ -110,7 +110,7 @@ public class ResearchOrchestrator
         {
             try
             {
-                var similar = await _memory.RetrieveSimilarTasksAsync(description, topK: 3);
+                var similar = await _memory.RetrieveSimilarTasksAsync(description, topK: _retrievalTopK);
                 // Find any pending tasks with sufficient similarity
                 var pendingMatches = similar
                     .Where(s => s.Score >= _pendingMergeThreshold)
@@ -119,7 +119,10 @@ public class ResearchOrchestrator
                     .ToList();
                 if (pendingMatches.Any())
                 {
-                    var target = pendingMatches.First();
+                    // Prefer the most similar pending match
+                    var target = pendingMatches
+                        .OrderByDescending(t => similar.First(s => s.Id == t!.Id).Score)
+                        .First();
                     // Merge intent: append note to target; drop new task
                     target!.Description = target.Description + "\n(merged similar request) " + description;
                     Publish(new TaskEvent { TaskId = target.Id, Status = target.Status, EventType = "merged", Message = "Merged duplicate" });
@@ -134,8 +137,12 @@ public class ResearchOrchestrator
                     .ToList();
                 if (completedMatches.Any())
                 {
+                    // Prefer the most similar completed match
+                    var target = completedMatches
+                        .OrderByDescending(t => similar.First(s => s.Id == t!.Id).Score)
+                        .First();
                     // Return the existing completed task id
-                    return completedMatches.First()!.Id;
+                    return target!.Id;
                 }
             }
             catch { }
