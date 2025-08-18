@@ -1,5 +1,5 @@
 ---
-description: Allways adhere to the AI Development Guidelines in the todo.md
+description: Allways adhere to the AI Development Guidelines in the todo.md and update the todo.md file when done.
 globs:
 alwaysApply: true
 ---
