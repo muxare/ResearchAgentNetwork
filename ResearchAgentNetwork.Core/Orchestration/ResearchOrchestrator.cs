@@ -280,6 +280,13 @@ public class ResearchOrchestrator
                 return;
             }
             Console.WriteLine($"➡️  Processing task {task.Id} (priority {task.Priority}): {task.Description}");
+            // Route finalization tasks to their handlers
+            if (task.IsSystemTask && task.Category == TaskCategory.Finalization)
+            {
+                await ProcessFinalizationTaskAsync(task);
+                return;
+            }
+
             if (task.Status == TaskStatus.Aggregating)
             {
                 var aggregatorResponse = await _agents["aggregator"].ProcessAsync(task, _kernel);
@@ -614,6 +621,149 @@ public class ResearchOrchestrator
             task.Result = new ResearchResult { Content = $"Error: {ex.Message}", ConfidenceScore = 0 };
             Console.WriteLine($"❌ Task {task.Id} failed: {ex.Message}");
             Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "failed", Message = ex.Message });
+        }
+    }
+
+    private async Task ProcessFinalizationTaskAsync(ResearchTask task)
+    {
+        var step = (task.Metadata.TryGetValue("FinalizationStep", out var s) ? s as string : null) ?? string.Empty;
+        var root = task.ParentTaskId.HasValue && _taskRegistry.TryGetValue(task.ParentTaskId.Value, out var p) ? p : task;
+        task.Status = TaskStatus.Executing;
+        Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "status", Message = $"finalization:{step.ToLower()}" });
+
+        try
+        {
+            switch (step)
+            {
+                case "Outline":
+                {
+                    if (root.Metadata.ContainsKey("ReportOutline"))
+                    {
+                        Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "outlined", Message = "reuse" });
+                        task.Status = TaskStatus.Completed;
+                        Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "completed" });
+                        return;
+                    }
+                    var outlineResp = await _agents["outline"].ProcessAsync(root, _kernel);
+                    if (outlineResp.Success && outlineResp.Data is ReportOutline outline)
+                    {
+                        Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "outlined", Message = $"sections:{outline.Sections.Count}" });
+                        task.Status = TaskStatus.Completed;
+                        Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "completed" });
+                        return;
+                    }
+                    throw new Exception("Outline generation failed");
+                }
+                case "SectionDraft":
+                {
+                    if (!root.Metadata.TryGetValue("ReportOutline", out var o) || o is not ReportOutline outline)
+                    {
+                        throw new Exception("Missing outline");
+                    }
+                    foreach (var section in outline.Sections)
+                    {
+                        var req = new SectionWriterAgent.SectionWriteRequest
+                        {
+                            SectionId = section.Id,
+                            Title = section.Title,
+                            Purpose = section.Purpose,
+                            EvidenceIds = section.EvidenceIds
+                        };
+                        root.Metadata["SectionWriteRequest"] = req;
+                        var writeResp = await _agents["section_writer"].ProcessAsync(root, _kernel);
+                        if (writeResp.Success && writeResp.Data is ReportSectionDraft draft)
+                        {
+                            // Store per-section draft on root
+                            root.Metadata[$"SectionDraft:{draft.SectionId}"] = draft;
+                            Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "section_drafted", Message = draft.SectionId });
+                        }
+                        else
+                        {
+                            throw new Exception($"Section draft failed for {section.Id}");
+                        }
+                    }
+                    task.Status = TaskStatus.Completed;
+                    Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "completed" });
+                    return;
+                }
+                case "FactCheck":
+                {
+                    // Iterate drafts
+                    var keys = root.Metadata.Keys.Where(k => k.StartsWith("SectionDraft:")).ToList();
+                    foreach (var key in keys)
+                    {
+                        var draft = root.Metadata[key] as ReportSectionDraft;
+                        if (draft == null) continue;
+                        root.Metadata["FactCheckInput"] = new FactCheckAgent.FactCheckInput { SectionId = draft.SectionId, ContentMd = draft.ContentMd };
+                        var fcResp = await _agents["fact_check"].ProcessAsync(root, _kernel);
+                        if (fcResp.Success)
+                        {
+                            Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "section_fact_checked", Message = draft.SectionId });
+                        }
+                        else
+                        {
+                            throw new Exception($"Fact check failed for {draft.SectionId}");
+                        }
+                    }
+                    task.Status = TaskStatus.Completed;
+                    Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "completed" });
+                    return;
+                }
+                case "CitationNormalize":
+                {
+                    var keys = root.Metadata.Keys.Where(k => k.StartsWith("SectionDraft:")).ToList();
+                    foreach (var key in keys)
+                    {
+                        var draft = root.Metadata[key] as ReportSectionDraft;
+                        if (draft == null) continue;
+                        root.Metadata["CitationNormalizeInput"] = new CitationManagerAgent.CitationNormalizeInput
+                        {
+                            SectionId = draft.SectionId,
+                            ContentMd = draft.ContentMd,
+                            RawCitations = draft.Citations,
+                            Style = "APA"
+                        };
+                        var cmResp = await _agents["citation_manager"].ProcessAsync(root, _kernel);
+                        if (cmResp.Success)
+                        {
+                            Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "section_citations_normalized", Message = draft.SectionId });
+                        }
+                        else
+                        {
+                            throw new Exception($"Citation normalize failed for {draft.SectionId}");
+                        }
+                    }
+                    task.Status = TaskStatus.Completed;
+                    Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "completed" });
+                    // Signal pipeline done at root level
+                    if (root.Id != task.Id)
+                    {
+                        Publish(new TaskEvent { TaskId = root.Id, Status = root.Status, EventType = "finalization_completed" });
+                    }
+                    return;
+                }
+                default:
+                    throw new Exception($"Unknown finalization step: {step}");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Bounded retry with backoff
+            var attempts = 0;
+            if (task.Metadata.TryGetValue("ExecAttempts", out var att) && att is int a) attempts = a;
+            attempts += 1;
+            task.Metadata["ExecAttempts"] = attempts;
+            if (attempts <= _maxRetryAttempts)
+            {
+                var delayMs = Math.Min(2000 * attempts, 10000);
+                Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "retry", Message = $"{step}:{attempts}" });
+                await Task.Delay(delayMs);
+                task.Status = TaskStatus.Pending;
+                _taskQueue.Enqueue(task);
+                return;
+            }
+            task.Status = TaskStatus.Failed;
+            Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "failed", Message = ex.Message });
         }
     }
 
