@@ -5,6 +5,7 @@
   let loading = $state(true);
   let error = $state<string>('');
   let markdown = $state<string>('');
+  let html = $state<string>('');
 
   async function loadReport() {
     loading = true;
@@ -25,6 +26,28 @@
     window.location.href = `/api/reports/${params.id}/download?format=md`;
   }
 
+  // parse markdown using marked on idle
+  let ticket = 0;
+  async function scheduleParse() {
+    const t = ++ticket;
+    try {
+      const mod: any = await import('marked');
+      const m = mod?.marked ?? mod?.default ?? mod;
+      const out = m?.parse ? m.parse(markdown) : String(markdown ?? '');
+      const htmlStr = typeof out === 'string' ? out : await out;
+      if (t === ticket) html = htmlStr;
+    } catch {
+      if (t === ticket) html = String(markdown ?? '');
+    }
+  }
+
+  $effect(() => {
+    const m = markdown;
+    // @ts-ignore: requestIdleCallback may exist
+    const ric = (window as any)?.requestIdleCallback as ((cb: () => void) => number) | undefined;
+    if (ric) ric(() => void scheduleParse()); else setTimeout(() => void scheduleParse(), 0);
+  });
+
   onMount(() => { loadReport(); });
 </script>
 
@@ -42,17 +65,7 @@
       <button class="px-3 py-1.5 text-xs rounded bg-slate-800 text-white hover:bg-slate-900" on:click={download}>Download Markdown</button>
       <button class="px-3 py-1.5 text-xs rounded bg-slate-100 hover:bg-slate-200" on:click={loadReport}>Refresh</button>
     </div>
-    <article class="mt-4 prose prose-sm max-w-none">
-      {@html markdown
-        .replace(/\n/g, '<br/>')
-        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-        .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-        .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-        .replace(/`(.*?)`/gim, '<code>$1</code>')
-      }
-    </article>
+    <article class="mt-4 prose prose-sm max-w-none">{@html html}</article>
   {/if}
 </main>
 
