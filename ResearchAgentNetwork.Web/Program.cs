@@ -504,6 +504,26 @@ app.MapGet("/api/tasks/{id:guid}/report/persisted", async (Guid id, IReportRepos
     return Results.Text(r.ReportMarkdown, "text/plain");
 });
 
+// New consolidated report APIs
+app.MapGet("/api/reports/{id:guid}", async (Guid id, IReportRepository reportsRepo) =>
+{
+    var r = await reportsRepo.GetAsync(id);
+    if (r == null) return Results.NotFound();
+    return Results.Ok(new { taskId = r.TaskId, markdown = r.ReportMarkdown, generatedAtUtc = r.GeneratedAtUtc });
+});
+
+app.MapGet("/api/reports/{id:guid}/download", async (Guid id, string? format, IReportRepository reportsRepo) =>
+{
+    var r = await reportsRepo.GetAsync(id);
+    if (r == null) return Results.NotFound();
+    var bytes = System.Text.Encoding.UTF8.GetBytes(r.ReportMarkdown);
+    if (string.IsNullOrWhiteSpace(format) || string.Equals(format, "md", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.File(bytes, "text/markdown", fileDownloadName: $"report-{id}.md");
+    }
+    return Results.BadRequest(new { error = "Unsupported format. Use format=md." });
+});
+
 app.MapGet("/admin/events", async (IEventRepository repo, Guid? taskId, DateTime? fromUtc, DateTime? toUtc, int? top, int? skip) =>
 {
     var take = Math.Clamp(top ?? 200, 1, 5000);
