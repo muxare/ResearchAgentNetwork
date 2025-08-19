@@ -15,6 +15,11 @@ using System.Text.Json.Serialization;
 using ResearchAgentNetwork.WebSearch;
 using ResearchAgentNetwork.Infrastructure.WebSearch;
 using ResearchAgentNetwork.Persistence.Repositories;
+using ResearchAgentNetwork.Web;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 // Persistence (configurable: SqlServer or Sqlite)
@@ -61,6 +66,31 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
+
+// JWT/Auth configuration
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "ran.local";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "ran.clients";
+var jwtKey = builder.Configuration["Jwt:Key"] ?? "dev_insecure_key_change_me";
+var accessTokenMinutes = int.TryParse(builder.Configuration["Jwt:AccessTokenMinutes"], out var atm) ? atm : 30;
+var refreshTokenDays = int.TryParse(builder.Configuration["Jwt:RefreshTokenDays"], out var rtd) ? rtd : 14;
+
+var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateIssuerSigningKey = true,
+            ValidateLifetime = true,
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience,
+            IssuerSigningKey = signingKey,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
+builder.Services.AddAuthorization();
 
 // Orchestrator singleton
 // Optional semantic memory wiring (Phase 0 - in-memory)
@@ -182,6 +212,7 @@ orchestrator.TaskEventPublished += (e) =>
 builder.Services.AddScoped<ITaskRepository, TaskRepository>();
 builder.Services.AddScoped<IEventRepository, EventRepository>();
 builder.Services.AddScoped<IReportRepository, ReportRepository>();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
 
 var app = builder.Build();
 
@@ -227,6 +258,10 @@ using (var scope = app.Services.CreateScope())
 }
 // Initialize LLM logger now that app services are available
 KernelExtensionsApp.Logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("LLM");
+
+// Auth middleware
+app.UseAuthentication();
+app.UseAuthorization();
 
 // Configure Web Search provider and inject agent when enabled
 if (enableWebSearch)
@@ -327,6 +362,101 @@ app.MapGet("/api/tasks/{id:guid}/report", (Guid id) =>
 {
     var report = orchestrator.GenerateTaskReport(id);
     return Results.Text(report, "text/plain");
+});
+
+// ===== Auth Endpoints =====
+
+string CreateAccessToken(UserEntity user, IEnumerable<string> roles)
+{
+    var claims = new List<Claim>
+    {
+        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        new Claim(ClaimTypes.Name, user.UserName),
+        new Claim(ClaimTypes.Email, user.Email)
+    };
+    claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
+
+    var creds = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
+    var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
+        issuer: jwtIssuer,
+        audience: jwtAudience,
+        claims: claims,
+        expires: DateTime.UtcNow.AddMinutes(accessTokenMinutes),
+        signingCredentials: creds);
+    return new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token);
+}
+
+static string HashPassword(string password)
+{
+    return BCrypt.Net.BCrypt.HashPassword(password);
+}
+
+static bool VerifyPassword(string password, string hash)
+{
+    return BCrypt.Net.BCrypt.Verify(password, hash);
+}
+
+app.MapPost("/api/auth/register", async (RegisterRequest req, IUserRepository usersRepo) =>
+{
+    if (string.IsNullOrWhiteSpace(req.UserName) || string.IsNullOrWhiteSpace(req.Password))
+        return Results.BadRequest(new { error = "Username and password are required" });
+
+    if (await usersRepo.ExistsByUserNameAsync(req.UserName.ToUpperInvariant()))
+        return Results.Conflict(new { error = "Username already exists" });
+
+    var user = new UserEntity
+    {
+        UserName = req.UserName,
+        Email = req.Email ?? string.Empty,
+        DisplayName = req.DisplayName,
+        PasswordHash = HashPassword(req.Password),
+        EmailConfirmed = false,
+        IsActive = true,
+        SecurityStamp = Guid.NewGuid().ToString("N")
+    };
+
+    await usersRepo.CreateAsync(user, roles: Array.Empty<string>());
+    return Results.Ok(new { id = user.Id, user = new { user.UserName, user.Email, user.DisplayName } });
+});
+
+app.MapPost("/api/auth/login", async (LoginRequest req, IUserRepository usersRepo, AppDbContext db) =>
+{
+    var normalized = (req.UserName ?? string.Empty).ToUpperInvariant();
+    var user = await usersRepo.GetByUserNameAsync(normalized);
+    if (user is null || !VerifyPassword(req.Password ?? string.Empty, user.PasswordHash) || !user.IsActive)
+        return Results.Unauthorized();
+
+    var roles = user.Roles.Select(r => r.Role.Name).ToArray();
+    var accessToken = CreateAccessToken(user, roles);
+    var refresh = new RefreshTokenEntity
+    {
+        UserId = user.Id,
+        Token = Convert.ToBase64String(Guid.NewGuid().ToByteArray()),
+        CreatedAtUtc = DateTime.UtcNow,
+        ExpiresAtUtc = DateTime.UtcNow.AddDays(refreshTokenDays)
+    };
+    db.RefreshTokens.Add(refresh);
+    await db.SaveChangesAsync();
+    return Results.Ok(new { accessToken, refreshToken = refresh.Token, expiresInMinutes = accessTokenMinutes, roles });
+});
+
+app.MapPost("/api/auth/refresh", async (RefreshRequest req, AppDbContext db, IUserRepository usersRepo) =>
+{
+    var token = await db.RefreshTokens.Include(r => r.User).ThenInclude(u => u.Roles).ThenInclude(ur => ur.Role).FirstOrDefaultAsync(r => r.Token == req.RefreshToken);
+    if (token is null || !token.IsActive)
+        return Results.Unauthorized();
+    var roles = token.User.Roles.Select(r => r.Role.Name);
+    var accessToken = CreateAccessToken(token.User, roles);
+    return Results.Ok(new { accessToken, expiresInMinutes = accessTokenMinutes });
+});
+
+app.MapPost("/api/auth/logout", async (RefreshRequest req, AppDbContext db) =>
+{
+    var token = await db.RefreshTokens.FirstOrDefaultAsync(r => r.Token == req.RefreshToken);
+    if (token is null) return Results.Ok();
+    token.RevokedAtUtc = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+    return Results.Ok();
 });
 
 // Events for a task (Phase 1 timeline API)

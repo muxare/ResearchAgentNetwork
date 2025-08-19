@@ -64,13 +64,35 @@
 #### Database Persistence
 - [x] **Entity Framework**: Database integration for task persistence
 - [x] **Task History**: Long-term task storage and audit trails
-- [ ] **User Management**: Authentication and authorization
+- [x] **User Management**: Persistence + JWT auth endpoints (register, login, refresh, logout)
+- [ ] **Authorization**: Role-based policies and admin route protection
+- [ ] **UI Integration**: Login flow, token storage, and auth header wiring
 
 #### Advanced Features
-- [ ] **Plugin System**: Extensible agent architecture
-- [ ] **Result Caching**: Intelligent result reuse and caching
-- [ ] **Multi-Tenant Support**: User isolation and management
-- [ ] **Export Capabilities**: PDF, Word, and other export formats
+- [ ] **Plugin System (Semantic Kernel–aligned)**
+  - Use SK plugins as the extensibility unit (native functions and OpenAPI plugins) with function-calling
+  - Import patterns: `ImportPluginFromType()` for local code, `ImportPluginFromOpenApiAsync()` for HTTP services
+  - Author rich function descriptions to improve planner/function selection; prefer narrow, well-typed inputs
+  - Expose existing agents (e.g., web search, memory ops) as plugins and allow orchestrator to invoke via function choice
+  - Acceptance: POC with 2 plugins (InternalTasksPlugin, WebSearchPlugin), orchestrator can auto-select and invoke
+- [ ] **Result Caching (Semantic + Vector)**
+  - Short-term semantic answer cache keyed by normalized prompt + settings; TTL + LRU policy
+  - Use SK Vector Store abstractions for RAG-level dedupe/near-duplicate checks before re-executing tasks
+  - Optionally evaluate Kernel Memory service for higher-level ingestion/citation workflows where useful
+  - Acceptance: 20–40% hit rate on repeated requests; cache bypass toggle; correctness checks vs cold path
+- [ ] **Multi-Tenant Support**
+  - Persistence: per-tenant scoping via `TenantId` columns and EF global query filters
+  - Vector memory: collection/namespace prefix per tenant (e.g., `ran_<tenant>_<dims>`), plus tag filters
+  - AuthZ: map JWT claims → tenant and roles; enforce on repositories and API endpoints
+  - Acceptance: cross-tenant isolation verified by DB queries and vector retrieval tests
+- [ ] **Export Capabilities**
+  - Start with robust Markdown export (already in reports); add PDF rendering server-side
+  - Keep HTML export optional; ensure citations survive format conversion
+  - Acceptance: deterministic PDF export for a sample report with images/links, <= 2s render on average
+- [ ] **Agent Framework Alignment (SK)**
+  - Evaluate SK Agent Framework (e.g., `ChatCompletionAgent`) for future orchestration and tool-calling parity
+  - Map current orchestrator events to SK agent messages; instrument intermediate tool calls
+  - Acceptance: spike that mirrors one task flow using an SK agent + plugins with equivalent results
 
 ## 🎯 DevOps Execution Plan
 
@@ -134,7 +156,7 @@
 - [ ] **Audit Logging**: Comprehensive audit trails
 
 #### 4.2 Enterprise Features
-- [ ] **User Authentication**: Identity management
+- [x] **User Authentication**: Basic JWT issuance and refresh endpoints
 - [ ] **Role-Based Access**: Permission management
 - [ ] **Multi-Tenancy**: User isolation
 - [ ] **Compliance**: GDPR and regulatory compliance
@@ -157,10 +179,22 @@
 ## 🚀 Immediate Next Steps (This Week)
 
 ### High Priority
-1. **Complete Testing Suite**: Finalize unit and integration tests
-2. **Performance Validation**: Test with realistic task loads
-3. **Documentation Review**: Update all documentation for accuracy
-4. **Deployment Preparation**: Create production deployment scripts
+1. **Auto-Trigger Finalization Pipeline (Root Completion)**: When a root task completes (either directly or via aggregated subtasks), automatically kick off the finalization pipeline
+   - Outline: generate report outline via `ReportOutlineAgent`
+   - Section Drafting: produce section drafts via `SectionWriterAgent`
+   - Fact Checking: verify claims and provenance via `QualityAssessmentAgent`
+   - Citation Normalization: dedupe/format citations via `CitationManagerAgent`
+   - Visibility: spawn these as system subtasks so they appear as task cards for transparency
+   - Acceptance: on root completion, the four steps run in order with retries; progress visible via SSE; persisted `TaskReport` is produced
+2. **Publish Final Report (In-App Viewer + Download)**: Make the written final report available to read in the app and downloadable in a fitting format
+   - Backend: `GET /api/reports/{taskId}` (Markdown/JSON), `GET /api/reports/{taskId}/download?format=md` (PDF later)
+   - Frontend (SvelteKit): route `/tasks/{id}/report` renders Markdown with a clean Tailwind layout; includes download button
+   - Realtime: show a “Finalizing…” state until the report is ready; refresh automatically when finalization completes
+   - Acceptance: after finalization, users can open the report page, read the full Markdown, and download the `.md` file; PDF export is tracked separately
+3. **Complete Testing Suite**: Finalize unit and integration tests
+4. **Performance Validation**: Test with realistic task loads
+5. **Documentation Review**: Update all documentation for accuracy
+6. **Deployment Preparation**: Create production deployment scripts
 
 ### Medium Priority
 1. **Error Handling**: Enhance error handling and user feedback
@@ -247,6 +281,84 @@
     - Add approval workflow to `TaskAnalyzerAgent` when depth > max depth
     - Create `ApprovalColumn.svelte` component for the new kanban lane
     - Add approval actions: `Approve`, `Reject`, `RequestChanges` with comments
+
+#### Finalization Pipeline & Publication
+- [ ] **Auto-Trigger Finalization Pipeline (Root Completion)**
+  - **Technical Implementation**:
+    - Add orchestrator hook `OnRootTaskCompleted(Guid rootTaskId)` that enqueues finalization subtasks with explicit dependencies: Outline → SectionDraft → FactCheck → CitationNormalize
+    - Mark finalization subtasks as `IsSystemTask = true` and `TaskCategory = Finalization` for UI filtering
+    - Ensure idempotency: detect and skip if a step already completed for this root; safe on retries/restarts
+    - Emit fine-grained SSE events: `FinalizationStarted`, `FinalizationProgress`, `FinalizationCompleted`, `FinalizationFailed`
+    - Persist outputs in `TaskReportEntity` (outline structure, section contents, normalized citations, status, version)
+    - Use Semantic Kernel native functions/skills for agent calls and structured outputs
+  - **Acceptance**:
+    - Completing a root task automatically schedules and executes the four finalization steps in order
+    - Finalization progress is visible on the board and via a per-task activity stream
+    - Finalization is resumable and idempotent after restarts
+- [ ] **In-App Report Publication (Viewer + Download)**
+  - **Technical Implementation**:
+    - Backend endpoints: `GET /api/reports/{taskId}` returns Markdown + metadata; `GET /api/reports/{taskId}/download?format=md`
+    - Frontend (SvelteKit): add `/tasks/[id]/report` page that renders Markdown and shows citation backlinks; Tailwind layout
+    - Show loading/finalizing state with auto-refresh when `FinalizationCompleted` arrives via SSE
+    - Add “Download Markdown” action (PDF export delivered later alongside existing Export Capabilities)
+  - **Acceptance**:
+    - User can open a completed task and read a formatted report in-app
+    - User can download the Markdown; PDF slated as a follow-up
+
+## PR Plan: Finalization & Publication
+
+- [ ] PR 1 — Orchestrator finalization trigger and domain scaffolding
+  - **Scope**: Auto-trigger finalization when a root task completes; create system subtasks (task cards) for Outline → SectionDraft → FactCheck → CitationNormalize; add SSE events; minimal persistence for report status
+  - **Backend**:
+    - Add orchestrator hook `OnRootTaskCompleted(rootTaskId)` that enqueues finalization subtasks with explicit dependencies and `IsSystemTask = true`, `TaskCategory = Finalization`
+    - Emit SSE events: `FinalizationStarted`, `FinalizationProgress`, `FinalizationCompleted`, `FinalizationFailed`
+    - Persist `TaskReportEntity` with status, version, timestamps; map in `AppDbContext`
+    - Ensure idempotency and safe retries
+  - **Files (indicative)**: orchestrator, `TaskStatus/TaskCategory` enum, `TaskReportEntity`, `AppDbContext`, SSE DTOs/endpoint wiring
+  - **Tests**: enqueue order, idempotency, SSE emission
+  - **Docs**: create `docs/Finalization-Pipeline.md` (architecture, data flow, execution flow, how to test)
+  - **Commit**: `feat(orchestrator): auto-trigger finalization pipeline on root completion`
+
+- [ ] PR 2 — UI task cards for finalization subtasks (SvelteKit + Tailwind)
+  - **Scope**: Render finalization subtasks as visible system task cards with badges; show live progress via SSE
+  - **Frontend**:
+    - Add `Finalization` category visuals and “system” badge
+    - Display dependency order and step status (queued/running/done/failed) with loading states
+  - **Files (indicative)**: `KanbanBoard.svelte`, `TaskCard.svelte`, `TaskDetails.svelte`, SSE store
+  - **Tests**: component rendering, SSE event handling
+  - **Docs**: add UI notes to `docs/Finalization-Pipeline.md` (UX, test steps)
+  - **Commit**: `feat(ui): show finalization system subtasks with live progress`
+
+- [ ] PR 3 — Wire finalization agents and retries (Semantic Kernel–aligned)
+  - **Scope**: Execute `ReportOutlineAgent`, `SectionWriterAgent`, `QualityAssessmentAgent`, `CitationManagerAgent` in order with retries/backoff; structured outputs
+  - **Backend**:
+    - Implement step handlers writing artifacts to `TaskReportEntity` (outline, drafts, normalized citations)
+    - Bounded exponential backoff; propagate actionable failure messages
+  - **Files (indicative)**: agent invocation layer, SK function registrations, finalization service, repository updates
+  - **Tests**: happy path + retry, structured output contracts
+  - **Docs**: sequence diagram and test instructions in `docs/Finalization-Pipeline.md`
+  - **Commit**: `feat(agents): wire finalization step handlers with retries and structured outputs`
+
+- [ ] PR 4 — Report API endpoints and repository
+  - **Scope**: Expose final report and metadata; Markdown download (PDF later)
+  - **Backend**:
+    - `GET /api/reports/{taskId}` returns Markdown + metadata
+    - `GET /api/reports/{taskId}/download?format=md` for file download
+    - Add `ITaskReportRepository` implementation; 404 and error shapes
+  - **Files (indicative)**: `ReportsController`, repository interface/impl, `AppDbContext` mapping
+  - **Tests**: controller (200/404), repository (insert/read), response schema
+  - **Docs**: API usage in `docs/Finalization-Pipeline.md` and `docs/API-Reports.md`
+  - **Commit**: `feat(api): add report read and markdown download endpoints`
+
+- [ ] PR 5 — In-app report viewer and download
+  - **Scope**: `/tasks/[id]/report` route; Markdown render; auto-refresh on finalization; download button
+  - **Frontend**:
+    - Show “Finalizing…” until `FinalizationCompleted` then render report and citations
+    - “Download Markdown” action using the new endpoint
+  - **Files (indicative)**: `routes/tasks/[id]/report/+page.svelte`, Markdown renderer, SSE subscription store
+  - **Tests**: loading → ready transition, markdown render snapshot, download link presence
+  - **Docs**: UI usage and end-to-end test steps in `docs/Finalization-Pipeline.md`
+  - **Commit**: `feat(ui): add in-app report viewer and markdown download`
 
 ### Agent System Enhancements
 

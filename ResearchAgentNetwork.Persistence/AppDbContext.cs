@@ -11,6 +11,10 @@ public class AppDbContext : DbContext
     public DbSet<TaskEntity> Tasks => Set<TaskEntity>();
     public DbSet<TaskEventEntity> TaskEvents => Set<TaskEventEntity>();
     public DbSet<TaskReportEntity> TaskReports => Set<TaskReportEntity>();
+    public DbSet<UserEntity> Users => Set<UserEntity>();
+    public DbSet<RoleEntity> Roles => Set<RoleEntity>();
+    public DbSet<UserRoleEntity> UserRoles => Set<UserRoleEntity>();
+    public DbSet<RefreshTokenEntity> RefreshTokens => Set<RefreshTokenEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -48,6 +52,53 @@ public class AppDbContext : DbContext
             b.HasKey(r => r.TaskId);
             b.Property(r => r.ReportMarkdown);
             b.Property(r => r.GeneratedAtUtc);
+        });
+
+        modelBuilder.Entity<UserEntity>(b =>
+        {
+            b.ToTable("Users");
+            b.HasKey(u => u.Id);
+            b.Property(u => u.UserName).HasMaxLength(256);
+            b.Property(u => u.NormalizedUserName).HasMaxLength(256);
+            b.Property(u => u.Email).HasMaxLength(256);
+            b.Property(u => u.NormalizedEmail).HasMaxLength(256);
+            b.Property(u => u.PasswordHash);
+            b.Property(u => u.DisplayName).HasMaxLength(256);
+            b.Property(u => u.SecurityStamp).HasMaxLength(256);
+            b.Property(u => u.CreatedAtUtc);
+            b.Property(u => u.UpdatedAtUtc);
+            b.HasIndex(u => u.NormalizedUserName).IsUnique();
+            b.HasIndex(u => u.NormalizedEmail);
+        });
+
+        modelBuilder.Entity<RoleEntity>(b =>
+        {
+            b.ToTable("Roles");
+            b.HasKey(r => r.Id);
+            b.Property(r => r.Name).HasMaxLength(128);
+            b.Property(r => r.NormalizedName).HasMaxLength(128);
+            b.HasIndex(r => r.NormalizedName).IsUnique();
+        });
+
+        modelBuilder.Entity<UserRoleEntity>(b =>
+        {
+            b.ToTable("UserRoles");
+            b.HasKey(ur => new { ur.UserId, ur.RoleId });
+            b.HasOne(ur => ur.User).WithMany(u => u.Roles).HasForeignKey(ur => ur.UserId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(ur => ur.Role).WithMany(r => r.Users).HasForeignKey(ur => ur.RoleId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RefreshTokenEntity>(b =>
+        {
+            b.ToTable("RefreshTokens");
+            b.HasKey(rt => rt.Id);
+            b.Property(rt => rt.Token).HasMaxLength(512);
+            b.Property(rt => rt.CreatedAtUtc);
+            b.Property(rt => rt.ExpiresAtUtc);
+            b.Property(rt => rt.RevokedAtUtc);
+            b.Property(rt => rt.ReplacedByToken).HasMaxLength(512);
+            b.HasIndex(rt => new { rt.UserId, rt.Token }).IsUnique();
+            b.HasOne(rt => rt.User).WithMany(u => u.RefreshTokens).HasForeignKey(rt => rt.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
