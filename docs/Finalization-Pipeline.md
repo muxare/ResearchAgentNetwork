@@ -37,3 +37,11 @@ These appear as task cards in the UI and emit SSE events for progress.
 
 - This PR adds scaffolding and eventing; PR 3 wires full agent execution and retries.
 
+## UI Notes (PR 2)
+
+- Finalization subtasks are visible as normal cards across the Kanban columns with two badges:
+  - `system` badge for system-generated tasks
+  - `finalization` badge for tasks with category `Finalization`
+- Live progress appears as cards move columns based on SSE-driven status updates
+- Dependency gating emits a temporary `blocked` event; the card remains in its column with normal `Pending`/`Analyzing` states until unblocked
+

@@ -26,8 +26,13 @@ export async function refreshTasks(): Promise<void> {
   try {
     const res = await fetch('/api/tasks');
     if (!res.ok) throw new Error(await res.text());
-    const list = (await res.json()) as TaskItem[];
-    tasks.set(list);
+    const list = (await res.json()) as any[];
+    const shaped = list.map((t: any) => ({
+      ...t,
+      isSystemTask: !!t.isSystemTask,
+      category: t.category ?? (t.metadata?.Category ?? t.metadata?.category ?? ''),
+    })) as TaskItem[];
+    tasks.set(shaped);
     error.set('');
   } catch (e: any) {
     error.set(e?.message || 'Failed to load tasks');
@@ -66,7 +71,10 @@ export function start(): void {
           .then((t) => {
             if (!t) return;
             const exists = get(tasks).some(x => String((x as any).id).toLowerCase() === idLower);
-            if (!exists) tasks.set([...get(tasks), t]);
+            if (!exists) {
+              const shaped = { ...t, isSystemTask: !!(t as any).isSystemTask, category: (t as any).category ?? ((t as any).metadata?.Category ?? (t as any).metadata?.category ?? '') } as any;
+              tasks.set([...get(tasks), shaped]);
+            }
           })
           .catch(() => {});
       }

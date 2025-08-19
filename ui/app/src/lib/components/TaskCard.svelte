@@ -8,6 +8,8 @@
     parentTaskId?: string;
     depth?: number;
     isRoot?: boolean;
+    isSystemTask?: boolean;
+    category?: string;
   }
 
   import { now as nowStore } from '$lib/stores/now';
@@ -56,6 +58,12 @@ on:click={() => onselect?.({ id: task.id })}>
       <span class="inline-flex items-center gap-1 mr-1 text-[10px] px-1 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">root</span>
     {:else if typeof task.depth === 'number' && task.depth > 0}
       <span class="inline-flex items-center gap-1 mr-1 text-[10px] px-1 py-0.5 rounded bg-slate-50 text-slate-700 border border-slate-200">lvl {task.depth}</span>
+    {/if}
+    {#if task.isSystemTask}
+      <span class="inline-flex items-center gap-1 mr-1 text-[10px] px-1 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">system</span>
+    {/if}
+    {#if (task.category ?? '').toLowerCase() === 'finalization'}
+      <span class="inline-flex items-center gap-1 mr-1 text-[10px] px-1 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-200">finalization</span>
     {/if}
     {task.description}
   </div>

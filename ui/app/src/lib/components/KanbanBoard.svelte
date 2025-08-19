@@ -40,7 +40,13 @@
     let source = tasks;
     if (filterStatus) source = source.filter(t => normalizeStatus(toStatusName((t as any).status)) === filterStatus);
     if (q) source = source.filter(t => (t.description?.toLowerCase().includes(q)) || ((t.id + '').toLowerCase().includes(q)));
-    const list = source.map(t => ({ ...t, status: normalizeStatus(toStatusName((t as any).status)) })).filter(t => t.status === key);
+    const list = source.map((t: any) => ({
+      ...t,
+      status: normalizeStatus(toStatusName(t.status)),
+      // wire through system/category if backend supplies them
+      isSystemTask: t.isSystemTask ?? false,
+      category: t.category ?? (t.metadata?.Category ?? t.metadata?.category ?? '')
+    })).filter(t => t.status === key);
     // decorate with hierarchy info if available
     const parentById: Record<string, string | undefined> = {};
     for (const t of tasks as any) parentById[(t as any).id] = (t as any).parentTaskId;

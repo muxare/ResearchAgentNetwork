@@ -4,5 +4,9 @@ export type TaskItem = {
   status: string;
   createdAt?: string;
   priority?: number;
+  parentTaskId?: string;
+  isSystemTask?: boolean;
+  category?: string;
+  metadata?: Record<string, any>;
 };
 
