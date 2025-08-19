@@ -58,6 +58,72 @@ public class ResearchOrchestrator
         try { TaskEventPublished?.Invoke(e); } catch { }
     }
 
+    private void EnqueueFinalizationPipeline(ResearchTask root)
+    {
+        // Outline task
+        var outlineTask = new ResearchTask
+        {
+            Description = $"Generate outline for root:{root.Id}",
+            Priority = Math.Max(1, root.Priority + 1),
+            ParentTaskId = root.Id,
+            IsSystemTask = true,
+            Category = TaskCategory.Finalization
+        };
+        outlineTask.Metadata["FinalizationStep"] = "Outline";
+        _taskQueue.Enqueue(outlineTask);
+        _taskRegistry[outlineTask.Id] = outlineTask;
+        root.SubTaskIds.Add(outlineTask.Id);
+        Publish(new TaskEvent { TaskId = outlineTask.Id, ParentTaskId = root.Id, Status = outlineTask.Status, EventType = "submitted", Message = "finalization:outline" });
+
+        // Section drafting (depends on outline completion)
+        var sectionsTask = new ResearchTask
+        {
+            Description = $"Draft sections for root:{root.Id}",
+            Priority = Math.Max(1, root.Priority + 1),
+            ParentTaskId = root.Id,
+            IsSystemTask = true,
+            Category = TaskCategory.Finalization
+        };
+        sectionsTask.Metadata["FinalizationStep"] = "SectionDraft";
+        sectionsTask.Metadata["DependsOn"] = outlineTask.Id;
+        _taskQueue.Enqueue(sectionsTask);
+        _taskRegistry[sectionsTask.Id] = sectionsTask;
+        root.SubTaskIds.Add(sectionsTask.Id);
+        Publish(new TaskEvent { TaskId = sectionsTask.Id, ParentTaskId = root.Id, Status = sectionsTask.Status, EventType = "submitted", Message = "finalization:section_draft" });
+
+        // Fact check (depends on sections)
+        var factTask = new ResearchTask
+        {
+            Description = $"Fact-check sections for root:{root.Id}",
+            Priority = Math.Max(1, root.Priority + 1),
+            ParentTaskId = root.Id,
+            IsSystemTask = true,
+            Category = TaskCategory.Finalization
+        };
+        factTask.Metadata["FinalizationStep"] = "FactCheck";
+        factTask.Metadata["DependsOn"] = sectionsTask.Id;
+        _taskQueue.Enqueue(factTask);
+        _taskRegistry[factTask.Id] = factTask;
+        root.SubTaskIds.Add(factTask.Id);
+        Publish(new TaskEvent { TaskId = factTask.Id, ParentTaskId = root.Id, Status = factTask.Status, EventType = "submitted", Message = "finalization:fact_check" });
+
+        // Citation normalize (depends on fact)
+        var citeTask = new ResearchTask
+        {
+            Description = $"Normalize citations for root:{root.Id}",
+            Priority = Math.Max(1, root.Priority + 1),
+            ParentTaskId = root.Id,
+            IsSystemTask = true,
+            Category = TaskCategory.Finalization
+        };
+        citeTask.Metadata["FinalizationStep"] = "CitationNormalize";
+        citeTask.Metadata["DependsOn"] = factTask.Id;
+        _taskQueue.Enqueue(citeTask);
+        _taskRegistry[citeTask.Id] = citeTask;
+        root.SubTaskIds.Add(citeTask.Id);
+        Publish(new TaskEvent { TaskId = citeTask.Id, ParentTaskId = root.Id, Status = citeTask.Status, EventType = "submitted", Message = "finalization:citation_normalize" });
+    }
+
     private static string JsonMsg(object details)
     {
         try
@@ -190,6 +256,22 @@ public class ResearchOrchestrator
     {
         try
         {
+            // Simple dependency gating for system/finalization tasks
+            try
+            {
+                if (task.Metadata.TryGetValue("DependsOn", out var dep) && dep is Guid depId)
+                {
+                    if (!_taskRegistry.TryGetValue(depId, out var depTask) || depTask == null || depTask.Status != TaskStatus.Completed)
+                    {
+                        Publish(new TaskEvent { TaskId = task.Id, ParentTaskId = task.ParentTaskId, Status = task.Status, EventType = "blocked", Message = $"depends_on:{depId}" });
+                        // Re-enqueue and yield briefly
+                        _taskQueue.Enqueue(task);
+                        await Task.Delay(250);
+                        return;
+                    }
+                }
+            }
+            catch { }
             if (task.Metadata.TryGetValue("Cancelled", out var c) && c is bool cval && cval)
             {
                 task.Status = TaskStatus.Failed;
@@ -208,70 +290,20 @@ public class ResearchOrchestrator
                     Console.WriteLine($"🧷 Aggregated {task.SubTaskIds.Count} subtasks for parent {task.Id}");
                     Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "aggregated" });
 
-                    // Phase B: Outline planning stage after aggregation
+                    // Phase B: Enqueue Finalization subtasks (Outline → SectionDraft → FactCheck → CitationNormalize)
                     try
                     {
-                        var outlineResp = await _agents["outline"].ProcessAsync(task, _kernel);
-                        if (outlineResp.Success && outlineResp.Data is ReportOutline outline)
-                        {
-                            Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "outlined", Message = $"sections:{outline.Sections.Count}" });
-
-                            // Phase C: Write each section (best-effort, sequential for now)
-                            foreach (var section in outline.Sections)
-                            {
-                                var req = new SectionWriterAgent.SectionWriteRequest
-                                {
-                                    SectionId = section.Id,
-                                    Title = section.Title,
-                                    Purpose = section.Purpose,
-                                    EvidenceIds = section.EvidenceIds
-                                };
-                                task.Metadata["SectionWriteRequest"] = req;
-                                try
-                                {
-                                    var writeResp = await _agents["section_writer"].ProcessAsync(task, _kernel);
-                                    if (writeResp.Success && writeResp.Data is ReportSectionDraft draft)
-                                    {
-                                        Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "section_drafted", Message = draft.SectionId });
-
-                                        // Phase D: Fact check the drafted section
-                                        try
-                                        {
-                                            task.Metadata["FactCheckInput"] = new FactCheckAgent.FactCheckInput { SectionId = draft.SectionId, ContentMd = draft.ContentMd };
-                                            var fcResp = await _agents["fact_check"].ProcessAsync(task, _kernel);
-                                            if (fcResp.Success)
-                                            {
-                                                Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "section_fact_checked", Message = draft.SectionId });
-                                            }
-                                        }
-                                        catch { }
-
-                                        // Phase D: Normalize citations for the section
-                                        try
-                                        {
-                                            task.Metadata["CitationNormalizeInput"] = new CitationManagerAgent.CitationNormalizeInput
-                                            {
-                                                SectionId = draft.SectionId,
-                                                ContentMd = draft.ContentMd,
-                                                RawCitations = draft.Citations,
-                                                Style = "APA"
-                                            };
-                                            var cmResp = await _agents["citation_manager"].ProcessAsync(task, _kernel);
-                                            if (cmResp.Success)
-                                            {
-                                                Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "section_citations_normalized", Message = draft.SectionId });
-                                            }
-                                        }
-                                        catch { }
-                                    }
-                                }
-                                catch { }
-                            }
-                        }
+                        EnqueueFinalizationPipeline(task);
                     }
                     catch { }
                 }
                 return;
+            }
+
+            // Root task direct completion (no aggregation path): trigger finalization as well
+            if (task.ParentTaskId is null && task.Status == TaskStatus.Completed)
+            {
+                try { EnqueueFinalizationPipeline(task); } catch { }
             }
 
             var currentDepth = ComputeTaskDepth(task);
@@ -284,6 +316,11 @@ public class ResearchOrchestrator
                 var analyzerResponse = await _agents["analyzer"].ProcessAsync(task, _kernel);
                 if (analyzerResponse.Data is List<ResearchTask> subTasks)
                 {
+                    // If no subtasks created, mark task for direct execution and fall through
+                    if (subTasks.Count == 0)
+                    {
+                        task.Metadata["ForceExecute"] = true;
+                    }
                     Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "agent_decision", Message = JsonMsg(new { agent = "analyzer", subtaskCount = subTasks.Count }) });
                     Console.WriteLine($"🧩 Decomposed into {subTasks.Count} subtasks (depth {currentDepth} → {currentDepth + 1})");
                     foreach (var subTask in subTasks)
@@ -295,10 +332,13 @@ public class ResearchOrchestrator
                         Console.WriteLine($"  ↳ Enqueued subtask {subTask.Id}: {subTask.Description}");
                         Publish(new TaskEvent { TaskId = subTask.Id, Status = subTask.Status, EventType = "submitted", ParentTaskId = task.Id });
                     }
-                    task.Status = TaskStatus.Pending;
-                    Console.WriteLine($"⏸️  Waiting for {subTasks.Count} subtasks to complete before aggregation");
-                    Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "decomposed", Message = $"{subTasks.Count} subtasks" });
-                    return;
+                    if (subTasks.Count > 0)
+                    {
+                        task.Status = TaskStatus.Pending;
+                        Console.WriteLine($"⏸️  Waiting for {subTasks.Count} subtasks to complete before aggregation");
+                        Publish(new TaskEvent { TaskId = task.Id, Status = task.Status, EventType = "decomposed", Message = $"{subTasks.Count} subtasks" });
+                        return;
+                    }
                 }
 
                 var mergerResponse = await _agents["merger"].ProcessAsync(task, _kernel);
@@ -447,6 +487,12 @@ public class ResearchOrchestrator
                         }
                     }
                     catch { }
+                }
+
+                // Trigger finalization for root tasks that completed via direct execution
+                if (task.ParentTaskId is null)
+                {
+                    try { EnqueueFinalizationPipeline(task); } catch { }
                 }
 
                 if (task.ParentTaskId.HasValue)

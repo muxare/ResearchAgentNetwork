@@ -11,4 +11,6 @@ public class ResearchTask
     public ResearchResult? Result { get; set; }
     public Dictionary<string, object> Metadata { get; set; } = new();
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsSystemTask { get; set; } = false;
+    public TaskCategory Category { get; set; } = TaskCategory.Normal;
 }
