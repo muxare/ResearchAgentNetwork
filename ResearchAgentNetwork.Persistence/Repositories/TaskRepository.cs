@@ -65,5 +65,15 @@ public class TaskRepository : ITaskRepository
         if (toUtc.HasValue) query = query.Where(t => t.CreatedAtUtc <= toUtc.Value);
         return await query.OrderByDescending(t => t.CreatedAtUtc).Skip(skip).Take(take).ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<TaskEntity>> GetRootTasksAsync(int skip, int take, CancellationToken cancellationToken = default)
+    {
+        return await _db.Tasks
+            .Where(t => t.ParentTaskId == null)
+            .OrderByDescending(t => t.CreatedAtUtc)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+    }
 }
 

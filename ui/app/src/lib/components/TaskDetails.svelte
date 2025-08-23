@@ -5,6 +5,7 @@
   import { createEventDispatcher } from 'svelte';
   const dispatch = createEventDispatcher<{ select: { id: string } }>();
   import { toStatusName } from '$lib/utils/status';
+  import { base } from '$app/paths';
 
   export interface TaskDetailsData {
     id: string;
@@ -199,7 +200,7 @@
         <h3 class="text-sm font-semibold">Report (rendered)</h3>
         <div class="flex items-center gap-2 mt-2">
           <a class="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200" href={`/api/reports/${meta.id}/download?format=md`} target="_blank" rel="noreferrer">Download MD</a>
-          <a class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" href={`/tasks/${meta.id}/report`}>Open In-App Viewer</a>
+          <a class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" data-sveltekit-preload-data="hover" href={`${base}/tasks/${meta.id}/report`}>Open In-App Viewer</a>
         </div>
         <div class="prose max-w-none mt-2">{@html html}</div>
       </div>

@@ -1,0 +1,17 @@
+---
+description: Enforce React Router patterns and best practices in the React Router codebase.
+globs: ["**/*.js", "**/*.jsx", "**/*.ts", "**/*.tsx"]
+alwaysApply: false
+---
+
+# React Router Rule
+
+- Use `<Routes>` to wrap route definitions; avoid manually inspecting `location.pathname`.
+- Favor declarative `<Route path="..." element={<.../>} />` over conditional rendering.
+- Use React Router hooks (`useNavigate`, `useParams`, `useLocation`, `useMatch`) instead of pushing history manually.
+- Define URL params in route paths and retrieve them via `useParams()`, not via direct string parsing.
+- For nested routes, use `<Outlet />` and organize sub-routes within nested `<Routes>`.
+- Keep route config in one module or use centralized route definitions where appropriate.
+- Avoid side effects inside components during route transitions (e.g., avoid `useEffect` for navigation; use `Navigate` element instead).
+- Prefer TypeScript definitions for route params: define interface/type and use `useParams<YourParams>()`.
+- When redirecting, use the `<Navigate to="..." replace />` component for declarative redirection.

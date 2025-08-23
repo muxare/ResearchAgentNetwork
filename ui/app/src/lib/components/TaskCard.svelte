@@ -37,7 +37,7 @@
 </script>
 
 <button type="button" class={`relative w-full text-left p-2 rounded-lg border bg-white hover:shadow-md transition group text-xs ${task.flashUntil && task.flashUntil > $now ? 'ring-2 ring-offset-1 ring-yellow-300' : ''}`}
-on:click={() => onselect?.({ id: task.id })}>
+onclick={() => onselect?.({ id: task.id })}>
   {#if (task as any)._stackCount > 0}
     <span class="pointer-events-none absolute inset-0 -z-10">
       <span class="absolute inset-0 translate-x-1 translate-y-1 rounded-lg border bg-white/90 shadow-sm"></span>

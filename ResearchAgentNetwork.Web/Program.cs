@@ -11,6 +11,7 @@ using Qdrant.Client;
 using Microsoft.EntityFrameworkCore;
 using ResearchAgentNetwork.Persistence;
 using ResearchAgentNetwork.Persistence.Entities;
+using Microsoft.Extensions.FileProviders;
 using System.Text.Json.Serialization;
 using ResearchAgentNetwork.WebSearch;
 using ResearchAgentNetwork.Infrastructure.WebSearch;
@@ -18,6 +19,7 @@ using ResearchAgentNetwork.Persistence.Repositories;
 using ResearchAgentNetwork.Web;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.StaticFiles;
 using System.Security.Claims;
 using System.Text;
 
@@ -259,9 +261,7 @@ using (var scope = app.Services.CreateScope())
 // Initialize LLM logger now that app services are available
 KernelExtensionsApp.Logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("LLM");
 
-// Auth middleware
-app.UseAuthentication();
-app.UseAuthorization();
+// Auth middleware is configured after routing (set up below)
 
 // Configure Web Search provider and inject agent when enabled
 if (enableWebSearch)
@@ -305,6 +305,20 @@ static string[] ParseAllowlist(string? csv)
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+// Explicitly serve SvelteKit build under /v2 from wwwroot/v2
+var jsContentTypeProvider = new FileExtensionContentTypeProvider();
+jsContentTypeProvider.Mappings[".js"] = "text/javascript";
+app.UseStaticFiles(new StaticFileOptions
+{
+	FileProvider = new PhysicalFileProvider(Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "v2")),
+	RequestPath = "/v2",
+	ContentTypeProvider = jsContentTypeProvider
+});
+
+// Auth middleware (after static files so assets are served without interference)
+app.UseAuthentication();
+app.UseAuthorization();
+
 // DB info (debug)
 app.MapGet("/api/dbinfo", () => new
 {
@@ -338,6 +352,15 @@ app.MapPost("/api/tasks/{id:guid}/refresh", (Guid id) => Results.Ok(orchestrator
 
 // All tasks (trimmed, from orchestrator snapshot)
 app.MapGet("/api/tasks", () => orchestrator.GetAllTasks());
+
+// Root tasks (from persistence where ParentTaskId is null)
+app.MapGet("/api/tasks/root", async (ITaskRepository repo, int? top, int? skip) =>
+{
+    var take = Math.Clamp(top ?? 100, 1, 1000);
+    var sk = Math.Max(0, skip ?? 0);
+    var list = await repo.GetRootTasksAsync(sk, take);
+    return Results.Ok(list);
+});
 
 // Admin tasks via repository (filters, paging, time window)
 app.MapGet("/admin/tasks", async (ITaskRepository repo, string? status, string? q, DateTime? fromUtc, DateTime? toUtc, int? top, int? skip) =>
@@ -545,6 +568,22 @@ app.MapGet("/admin/reports/{id:guid}/download", async (Guid id, IReportRepositor
     if (r == null) return Results.NotFound();
     var bytes = System.Text.Encoding.UTF8.GetBytes(r.ReportMarkdown);
     return Results.File(bytes, "text/markdown", fileDownloadName: $"report-{id}.md");
+});
+
+// SPA fallback for SvelteKit under /v2 — exclude assets and files with extensions
+var spaIndex = System.IO.Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "v2", "index.html");
+app.MapGet("/v2/{*path}", (HttpContext ctx) =>
+{
+	var p = ctx.Request.Path.Value ?? string.Empty;
+	if (p.Contains("/_app/") || p.Contains('.'))
+	{
+		return Results.NotFound();
+	}
+	if (System.IO.File.Exists(spaIndex))
+	{
+		return Results.File(spaIndex, "text/html");
+	}
+	return Results.NotFound();
 });
 
 // Simple SSE feed (poll-based publish of current status every 1s)

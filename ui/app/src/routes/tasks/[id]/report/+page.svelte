@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import { base } from '$app/paths';
   let { params }: { params: { id: string } } = $props();
   let loading = $state(true);
   let error = $state<string>('');
@@ -11,7 +12,7 @@
     loading = true;
     error = '';
     try {
-      const res = await fetch(`/api/reports/${params.id}`);
+      const res = await fetch(`${base}/api/reports/${params.id}`);
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       markdown = String(data.markdown ?? '');
@@ -23,7 +24,7 @@
   }
 
   function download() {
-    window.location.href = `/api/reports/${params.id}/download?format=md`;
+    window.location.href = `${base}/api/reports/${params.id}/download?format=md`;
   }
 
   // parse markdown using marked on idle
@@ -62,8 +63,8 @@
     <div class="mt-4 p-3 border rounded bg-red-50 text-red-700 text-sm">{error}</div>
   {:else}
     <div class="mt-4 flex items-center gap-2">
-      <button class="px-3 py-1.5 text-xs rounded bg-slate-800 text-white hover:bg-slate-900" on:click={download}>Download Markdown</button>
-      <button class="px-3 py-1.5 text-xs rounded bg-slate-100 hover:bg-slate-200" on:click={loadReport}>Refresh</button>
+      <button class="px-3 py-1.5 text-xs rounded bg-slate-800 text-white hover:bg-slate-900" onclick={download}>Download Markdown</button>
+      <button class="px-3 py-1.5 text-xs rounded bg-slate-100 hover:bg-slate-200" onclick={loadReport}>Refresh</button>
     </div>
     <article class="mt-4 prose prose-sm max-w-none">{@html html}</article>
   {/if}
