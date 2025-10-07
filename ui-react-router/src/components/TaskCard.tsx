@@ -21,18 +21,18 @@ function formatDate(iso?: string): string {
 }
 
 const statusToColor: Record<string, string> = {
-	Pending: 'bg-gray-500 text-white',
-	Analyzing: 'bg-blue-600 text-white',
-	Executing: 'bg-purple-600 text-white',
-	Aggregating: 'bg-orange-500 text-white',
-	Completed: 'bg-green-600 text-white',
-	Failed: 'bg-red-600 text-white'
+	Pending: 'badge badge-muted',
+	Analyzing: 'badge badge-info',
+	Executing: 'badge bg-purple-100 text-purple-700',
+	Aggregating: 'badge badge-warn',
+	Completed: 'badge badge-success',
+	Failed: 'badge badge-danger'
 };
 
 export const TaskCard: React.FC<{ task: TaskItem; onSelect?: (id: string) => void }> = ({ task, onSelect }) => {
 	return (
 		<button type="button"
-			className={`relative w-full text-left p-2 rounded-lg border bg-white hover:shadow-md transition group text-xs ${task.flashUntil && task.flashUntil > Date.now() ? 'ring-2 ring-offset-1 ring-yellow-300' : ''}`}
+			className={`relative w-full text-left p-2 card group text-xs ${task.flashUntil && task.flashUntil > Date.now() ? 'ring-2 ring-offset-1 ring-yellow-300' : ''}`}
 			onClick={() => onSelect?.(task.id)}>
 			{(task._stackCount ?? 0) > 0 && (
 				<span className="pointer-events-none absolute inset-0 -z-10">
@@ -42,7 +42,7 @@ export const TaskCard: React.FC<{ task: TaskItem; onSelect?: (id: string) => voi
 			)}
 			<div className="flex items-center justify-between">
 				<span className="text-[10px] text-gray-500 font-mono truncate max-w-[96px]">{task.id}</span>
-				<span className={`text-[10px] px-1 py-0.5 rounded-full shadow ${statusToColor[task.status] ?? 'bg-gray-400 text-white'}`}>
+				<span className={`${statusToColor[task.status] ?? 'badge badge-muted'}`}>
 					{task.status}
 					{(task._stackCount ?? 0) > 0 && (
 						<span className="ml-1 text-[9px] text-gray-700 align-middle">(+{task._stackCount})</span>

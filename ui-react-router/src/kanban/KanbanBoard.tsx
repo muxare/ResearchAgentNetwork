@@ -64,22 +64,22 @@ export const KanbanBoard: React.FC<Props> = ({ tasks, loading, onSelect, laneHei
 
 	return (
 		<div className="overflow-x-hidden">
-			<div className="p-2 border-b bg-white/70 backdrop-blur sticky top-0 z-10">
+			<div className="card-header sticky top-0 z-10">
 				<div className="flex flex-wrap items-end gap-3 text-xs">
 					<label className="text-sm">
 						<div className="text-[11px] text-gray-600">Filter</div>
-						<input className="border rounded-md px-2 py-1 focus:ring-2 focus:ring-blue-500/30 focus:outline-none" value={filterText} onChange={e => saveFilterText((e.target as HTMLInputElement).value)} placeholder="search..." />
+						<input className="input" value={filterText} onChange={e => saveFilterText((e.target as HTMLInputElement).value)} placeholder="search..." />
 					</label>
 					<label className="text-sm">
 						<div className="text-[11px] text-gray-600">Status</div>
-						<select className="border rounded-md px-2 py-1 focus:ring-2 focus:ring-blue-500/30 focus:outline-none" value={filterStatus} onChange={e => saveFilterStatus((e.target as HTMLSelectElement).value)}>
+						<select className="select" value={filterStatus} onChange={e => saveFilterStatus((e.target as HTMLSelectElement).value)}>
 							<option value="">All</option>
 							{statuses.map(s => (<option key={s} value={s}>{s}</option>))}
 						</select>
 					</label>
 					<label className="text-sm">
 						<div className="text-[11px] text-gray-600">Lane Height</div>
-						<input className="border rounded-md px-2 py-1 w-28 focus:ring-2 focus:ring-blue-500/30 focus:outline-none" value={laneHeightLocal} onChange={e => saveLaneHeight((e.target as HTMLInputElement).value)} placeholder="62vh or 480px" />
+						<input className="input w-28" value={laneHeightLocal} onChange={e => saveLaneHeight((e.target as HTMLInputElement).value)} placeholder="62vh or 480px" />
 					</label>
 				</div>
 			</div>
@@ -107,8 +107,8 @@ type ColumnProps = {
 // Simplified column without drag-drop for now; we can add dnd-kit later
 const KanbanColumn: React.FC<ColumnProps> = ({ title, tasks, loading, onSelect, laneHeight }) => {
 	return (
-		<section className="flex flex-col gap-2 bg-white/80 rounded-xl p-3 border shadow-sm w-[48%] sm:w-[48%] md:w-[31%] lg:w-[23%] xl:w-[16%] min-w-[220px]">
-			<header className="px-2 py-1 sticky top-0 z-10 bg-white/70 backdrop-blur border-b rounded-t-xl flex items-center gap-2">
+		<section className="flex flex-col gap-2 card p-3 w-[48%] sm:w-[48%] md:w-[31%] lg:w-[23%] xl:w-[16%] min-w-[220px]">
+			<header className="card-header sticky top-0 z-10 flex items-center gap-2">
 				<span className={
 					title === 'Pending' ? 'w-2 h-2 rounded-full bg-gray-500' :
 					title === 'Analyzing' ? 'w-2 h-2 rounded-full bg-blue-600' :
@@ -134,7 +134,7 @@ const KanbanColumn: React.FC<ColumnProps> = ({ title, tasks, loading, onSelect, 
 					tasks.map(t => (
 						<div key={t.id} onClick={() => onSelect?.(t.id)}>
 							{/* Reuse styles from TaskCard */}
-							<div className="relative w-full text-left p-2 rounded-lg border bg-white hover:shadow-md transition group text-xs">
+							<div className="relative w-full text-left p-2 card group text-xs">
 								<div className="flex items-center justify-between">
 									<span className="text-[10px] text-gray-500 font-mono truncate max-w-[96px]">{t.id}</span>
 									<span className="text-[10px] px-1 py-0.5 rounded-full shadow bg-gray-200">{t.status}</span>

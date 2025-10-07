@@ -15,3 +15,20 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: #4f46e5; }
 .dark ::-webkit-scrollbar-track { background: #1f2937; }
 
+/* Design tokens and component primitives */
+@layer components {
+	.card { @apply rounded-xl border bg-white shadow-sm hover:shadow-md transition-shadow; }
+	.card-header { @apply px-3 py-2 border-b bg-white/70 backdrop-blur rounded-t-xl; }
+	.badge { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium; }
+	.badge-muted { @apply bg-slate-100 text-slate-700; }
+	.badge-success { @apply bg-emerald-100 text-emerald-700; }
+	.badge-danger { @apply bg-rose-100 text-rose-700; }
+	.badge-info { @apply bg-blue-100 text-blue-700; }
+	.badge-warn { @apply bg-amber-100 text-amber-700; }
+	.input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500; }
+	.select { @apply rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500; }
+	.btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors; }
+	.btn-primary { @apply bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:ring-2 focus-visible:ring-indigo-500; }
+	.btn-ghost { @apply bg-transparent text-slate-700 hover:bg-slate-100; }
+}
+
