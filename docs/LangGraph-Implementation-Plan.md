@@ -1,4 +1,15 @@
-## Python + LangGraph Implementation Plan for ResearchAgentNetwork
+## Python + LangGraph Implementation Plan for ResearchAgentNetwork (v1 - SUPERSEDED)
+
+> **⚠️ NOTE:** This document has been superseded by **LangGraph-Implementation-Plan-v2.md**, which includes:
+> - Full feature parity mapping to .NET system
+> - Modern LangGraph features (streaming, checkpointing, LangSmith)
+> - Production deployment and scaling strategies
+> - Concrete code examples for all components
+> - Comprehensive testing and migration strategies
+>
+> **Please refer to v2 for the current implementation plan.**
+
+---
 
 This document outlines how to implement the ResearchAgentNetwork using Python with LangGraph while coexisting with the current .NET/Semantic Kernel system. It covers the architecture, requirements, data and execution flow, testing, repo layout, rollout phases, and operational concerns. The plan adheres to the user's implementation guidelines (small PRs, clear phases, independent steps, and reviewability).
 
@@ -297,6 +308,7 @@ app = graph.compile()
 - Implement node stubs and compile the initial graph.
 - Add unit tests for nodes and an E2E test of the minimal flow.
 - Wire UI to call the new Python endpoints for a pilot path.
+
 
 
 

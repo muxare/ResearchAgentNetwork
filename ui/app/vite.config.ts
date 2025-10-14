@@ -11,8 +11,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': { target: 'http://localhost:5000', changeOrigin: true },
-      '/admin': { target: 'http://localhost:5000', changeOrigin: true }
+      '/api': { target: 'http://localhost:64932', changeOrigin: true },
+      '/admin': { target: 'http://localhost:64932', changeOrigin: true }
     }
   }
 });
