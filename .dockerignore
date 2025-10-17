@@ -1,0 +1,66 @@
+# Exclude build artifacts
+**/bin/
+**/obj/
+**/out/
+**/TestResults/
+
+# Exclude IDE files
+**/.vs/
+**/.vscode/
+**/.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Exclude source control
+**/.git/
+**/.gitignore
+**/.gitattributes
+
+# Exclude documentation (not needed in container)
+**/*.md
+!README.md
+
+# Exclude frontend build artifacts
+**/node_modules/
+**/npm-debug.log
+**/dist/
+**/build/
+**/.svelte-kit/
+
+# Exclude databases and logs
+**/ran.db
+**/ran.db-shm
+**/ran.db-wal
+**/*.log
+
+# Exclude OS files
+**/.DS_Store
+**/Thumbs.db
+
+# Exclude Docker files themselves
+**/Dockerfile*
+**/docker-compose*
+**/.dockerignore
+
+# Exclude temporary files
+**/*.tmp
+**/*.temp
+**/*.swp
+**/*.swo
+*~
+
+# Exclude Python cache if present
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.venv/
+**/venv/
+
+# Exclude sensitive files
+**/.env
+**/.env.local
+**/appsettings.*.json
+!**/appsettings.json

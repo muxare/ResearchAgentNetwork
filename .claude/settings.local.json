@@ -1,7 +1,23 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dotnet build:*)"
+      "Bash(dotnet build:*)",
+      "Bash(dir:*)",
+      "Bash(docker compose:*)",
+      "Bash(timeout:*)",
+      "Bash(docker version:*)",
+      "Bash(docker ps:*)",
+      "Bash(pwsh:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker inspect:*)",
+      "Bash(python:*)",
+      "Bash(docker exec:*)",
+      "Bash(dotnet ef migrations add:*)",
+      "Bash(docker volume rm:*)",
+      "Bash(dotnet ef migrations remove:*)",
+      "Bash($env:Database__Provider=\"Sqlite\")",
+      "Bash(git log:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

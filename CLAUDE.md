@@ -280,7 +280,122 @@ Key file: `ResearchAgentNetwork.Core/Orchestration/ResearchOrchestrator.cs`
 - `docs/RAG-Implementation-Plan.md` - Retrieval-Augmented Generation design
 - `docs/WebSearch-*.md` - Web search integration guides
 
-## Important Implementation Notes
+## Python/LangGraph Implementation (python/ directory)
+
+A parallel Python implementation using LangGraph is being developed for comparative learning. Located in `python/` at repository root.
+
+### 🎯 LangGraph-First Philosophy
+
+**CRITICAL:** The Python implementation focuses exclusively on **LangGraph primitives** to maximize learning of graph-based orchestration. We intentionally minimize LangChain usage.
+
+### ✅ ALLOWED Dependencies
+
+**LangGraph Core (Primary Focus):**
+
+- `langgraph` - Graph orchestration, state management, checkpoints, streaming
+- `langchain-core` - **ONLY** for: `BaseMessage`, `ChatPromptTemplate`, `RunnableConfig`
+- `langchain-ollama` - **ONLY** for: `ChatOllama` LLM wrapper
+
+**Direct API Clients (No LangChain Wrappers):**
+
+- `httpx` - For Tavily web search (direct API calls)
+- `qdrant-client` - For vector store (direct API calls)
+- `sqlalchemy` - For database ORM
+- `pydantic` - For data validation
+- `fastapi` / `uvicorn` - For web API
+
+### ❌ AVOID These LangChain Components
+
+**NEVER use these packages/modules:**
+
+- ❌ `langchain` - Main package (too broad, not graph-focused)
+- ❌ `langchain.agents` - Agent framework (LangGraph replaces this)
+- ❌ `langchain.chains` - Chain abstractions (LangGraph replaces this)
+- ❌ `langchain.tools` - Tool wrappers (use direct API calls)
+- ❌ `langchain.memory` - Memory classes (use LangGraph state + checkpoints)
+- ❌ `langchain.document_loaders` - Document loaders (use simple file I/O)
+- ❌ `langchain.text_splitter` - Text splitting (implement ourselves)
+- ❌ `langchain.vectorstores` - Vector store wrappers (use `qdrant-client` directly)
+
+### Key Implementation Principles
+
+1. **State Over Memory:** Use LangGraph `State` classes with typed fields, not LangChain memory objects
+2. **Graphs Over Chains:** Use LangGraph `StateGraph`, not LangChain `LLMChain` or `SequentialChain`
+3. **Nodes Over Tools:** Write simple async functions as graph nodes, not LangChain `Tool` objects
+4. **Checkpoints Over History:** Use LangGraph checkpointers (SQLite/Postgres), not LangChain conversation history
+5. **Direct APIs Over Wrappers:** Call external APIs directly (Tavily, Qdrant), wrap minimally
+
+### Example - WRONG (LangChain Tool)
+
+```python
+from langchain.tools import TavilySearchResults
+
+# DON'T: LangChain tool wrapper hides what's happening
+tool = TavilySearchResults(api_key="...")
+results = tool.invoke({"query": "research topic"})
+```
+
+### Example - CORRECT (Direct API)
+
+```python
+import httpx
+
+# DO: Direct API call, explicit and clear
+async def web_search(query: str, api_key: str) -> list[dict]:
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://api.tavily.com/search",
+            json={"query": query, "api_key": api_key}
+        )
+        return response.json()["results"]
+
+# Use in LangGraph node:
+async def search_node(state: GraphState) -> dict:
+    results = await web_search(state["query"], config["api_key"])
+    return {"search_results": results}
+```
+
+### Python Project Structure
+
+```text
+python/
+├── Dockerfile                       # Python service container
+├── requirements.txt                 # Pinned dependencies
+├── pyproject.toml                  # Poetry/tool config
+├── pytest.ini                      # Test configuration
+├── ran_py/                         # Main package
+│   ├── models/                     # Pydantic schemas (match .NET)
+│   ├── agents/                     # Agent business logic
+│   ├── graphs/                     # LangGraph definitions
+│   │   ├── orchestrator.py         # Main graph (replaces ResearchOrchestrator)
+│   │   ├── nodes.py                # Node functions
+│   │   └── finalization.py         # Sub-graph for reports
+│   ├── db/                         # SQLAlchemy (shared DB with .NET)
+│   ├── llm/                        # LLM provider wrappers
+│   ├── tools/                      # Minimal tool functions
+│   └── api/                        # FastAPI application
+└── tests/                          # Unit + integration tests
+```
+
+### Why LangGraph-First Matters
+
+1. **Focused Learning:** Understand graph-based orchestration, not legacy LangChain patterns
+2. **Clean Mental Model:** LangGraph state vs LangChain memory; graphs vs chains
+3. **Modern Architecture:** LangGraph is the future, LangChain chains are legacy
+4. **Explicit Control:** Direct API calls show exactly what happens, no black boxes
+5. **Easier Debugging:** Smaller dependency tree, clearer execution flow
+
+### Shared Database Access
+
+Python and .NET share the same SQLite database:
+
+- SQLAlchemy models use **PascalCase** column names (match EF Core)
+- Both systems read/write `Tasks`, `TaskEvents`, `TaskReports` tables
+- Repository pattern mirrors .NET `ITaskRepository` interface
+
+---
+
+## Important Implementation Notes (.NET)
 
 - **Namespace**: All code uses `ResearchAgentNetwork` namespace (no project-specific namespaces)
 - **Structured Outputs**: Always use `KernelExtensions.GetStructuredResponseAsync<T>()` for LLM calls; include `Description` attributes on model properties for schema guidance
