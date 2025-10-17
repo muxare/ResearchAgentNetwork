@@ -98,6 +98,43 @@ services:
       retries: 5
     restart: unless-stopped
 
+  python-backend:
+    build:
+      context: .
+      dockerfile: python/Dockerfile
+      target: development
+    ports:
+      - "8090:8090"
+    environment:
+      - AI_PROVIDER=Ollama
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL_ID=llama3.1:latest
+      - OLLAMA_EMBEDDING_MODEL_ID=nomic-embed-text
+      - DATABASE_PATH=/app/data/ran.db
+      - DATABASE_PROVIDER=Sqlite
+      - VECTOR_DB_PROVIDER=Qdrant
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_COLLECTION_PREFIX=ran
+      - QDRANT_TOP_K=5
+      - MAX_CONCURRENCY=5
+      - MAX_DECOMPOSITION_DEPTH=2
+      - LOG_PROMPTS=true
+      - ENABLE_WEB_SEARCH=false
+      - API_HOST=0.0.0.0
+      - API_PORT=8090
+      - API_RELOAD=true
+    depends_on:
+      ollama:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - ran-network
+    volumes:
+      - backend-data:/app/data  # Share database with .NET backend
+      - ./python/ran_py:/app/ran_py  # Hot reload for development
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./ui/app
