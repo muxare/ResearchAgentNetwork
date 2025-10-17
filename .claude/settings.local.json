@@ -17,7 +17,9 @@
       "Bash(dotnet ef migrations remove:*)",
       "Bash($env:Database__Provider=\"Sqlite\")",
       "Bash(git log:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

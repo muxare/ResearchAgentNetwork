@@ -1,0 +1,37 @@
+# Core LangGraph (PRIMARY FOCUS - LangGraph-First Philosophy)
+langgraph==0.2.45
+langchain-core==0.3.18         # Minimal core only (BaseMessage, ChatPromptTemplate, RunnableConfig)
+langchain-ollama==0.2.5        # Ollama LLM integration
+
+# Direct API clients (NOT LangChain wrappers)
+httpx==0.27.0                  # Tavily web search, general HTTP
+qdrant-client==1.11.3          # Vector store (direct API, not langchain wrapper)
+sqlalchemy==2.0.36             # Database ORM
+pydantic==2.9.2                # Data validation
+pydantic-settings==2.6.1       # Config management
+
+# API framework
+fastapi==0.115.4
+uvicorn[standard]==0.32.0
+python-jose[cryptography]==3.3.0  # JWT tokens
+passlib[bcrypt]==1.7.4            # Password hashing
+python-multipart==0.0.12          # Form data support
+
+# Testing
+pytest==8.3.3
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+
+# Development tools
+ruff==0.7.4                    # Linting & formatting
+mypy==1.13.0                   # Type checking
+
+# Note: We explicitly DO NOT include:
+# - langchain (main package - too broad, not graph-focused)
+# - langchain.agents (use LangGraph instead)
+# - langchain.chains (use LangGraph StateGraph instead)
+# - langchain.tools (write minimal wrappers ourselves)
+# - langchain.memory (use LangGraph state + checkpoints instead)
+# - langchain.document_loaders (use simple file I/O)
+# - langchain.text_splitter (implement ourselves)
+# - langchain.vectorstores (use qdrant-client directly)
