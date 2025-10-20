@@ -4,6 +4,7 @@ Provides unified interface for different LLM providers (Ollama, OpenAI, etc.),
 matching .NET's IAIProvider pattern.
 """
 from abc import ABC, abstractmethod
+from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_ollama import ChatOllama

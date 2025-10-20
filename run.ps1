@@ -56,6 +56,16 @@ function Show-Usage {
     Write-Host ""
 
     Write-Host "Commands:" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Profile-based Docker Commands:" -ForegroundColor Yellow
+    Write-Host "  dotnet           " -ForegroundColor Blue -NoNewline
+    Write-Host "Start .NET Semantic Kernel backend + frontend (port 5000)"
+    Write-Host "  python           " -ForegroundColor Blue -NoNewline
+    Write-Host "Start Python LangGraph backend + frontend (port 8090)"
+    Write-Host "  both             " -ForegroundColor Blue -NoNewline
+    Write-Host "Start BOTH backends + frontend (comparative mode)"
+    Write-Host ""
+    Write-Host "  General Commands:" -ForegroundColor Yellow
     Write-Host "  dev              " -ForegroundColor Blue -NoNewline
     Write-Host "Start development environment (Docker with hot reload)"
     Write-Host "  prod             " -ForegroundColor Blue -NoNewline
@@ -91,16 +101,23 @@ function Show-Usage {
     Write-Host ""
 
     Write-Host "Examples:" -ForegroundColor Green
-    Write-Host "  .\run.ps1 dev                    # Start development environment"
+    Write-Host "  .\run.ps1 dotnet                 # Start .NET backend + frontend"
+    Write-Host "  .\run.ps1 python                 # Start Python backend + frontend"
+    Write-Host "  .\run.ps1 both                   # Start both backends (comparison mode)"
     Write-Host "  .\run.ps1 test                   # Run tests"
     Write-Host "  .\run.ps1 db migrate             # Apply migrations"
-    Write-Host "  .\run.ps1 logs backend           # Show backend logs"
+    Write-Host "  .\run.ps1 logs backend           # Show .NET backend logs"
+    Write-Host "  .\run.ps1 logs python-backend    # Show Python backend logs"
     Write-Host "  .\run.ps1 doctor                 # Check system health"
     Write-Host ""
 
     Write-Host "Development Workflow:" -ForegroundColor Green
     Write-Host "  1. .\run.ps1 doctor              # Check prerequisites"
-    Write-Host "  2. .\run.ps1 dev                 # Start services"
+    Write-Host "  2. .\run.ps1 dotnet              # Start .NET stack"
+    Write-Host "     OR"
+    Write-Host "     .\run.ps1 python              # Start Python stack"
+    Write-Host "     OR"
+    Write-Host "     .\run.ps1 both                # Start both (for comparison)"
     Write-Host "  3. .\run.ps1 logs                # Monitor logs"
     Write-Host "  4. .\run.ps1 stop                # Stop when done"
     Write-Host ""
@@ -250,6 +267,67 @@ function Invoke-Prod {
     Write-Info "Stop:      .\run.ps1 stop"
 }
 
+# DotNet profile - start .NET backend + frontend
+function Invoke-DotNet {
+    Write-Header "Starting .NET Semantic Kernel Stack"
+
+    Write-Info "Starting .NET backend + frontend (profile: dotnet)..."
+    docker compose --profile dotnet up --build -d
+
+    Write-Host ""
+    Write-Success "Services started!"
+    Write-Info "Frontend:      http://localhost:5173"
+    Write-Info ".NET Backend:  http://localhost:5000"
+    Write-Info "Ollama:        http://localhost:11434"
+    Write-Info "Qdrant:        http://localhost:6333/dashboard"
+    Write-Host ""
+    Write-Info "The frontend is connected to the .NET backend"
+    Write-Info "View logs: .\run.ps1 logs backend"
+    Write-Info "Stop:      .\run.ps1 stop"
+}
+
+# Python profile - start Python backend + frontend
+function Invoke-Python {
+    Write-Header "Starting Python LangGraph Stack"
+
+    Write-Info "Starting Python backend + frontend (profile: python)..."
+    docker compose --profile python up --build -d
+
+    Write-Host ""
+    Write-Success "Services started!"
+    Write-Info "Frontend:        http://localhost:5173"
+    Write-Info "Python Backend:  http://localhost:8090"
+    Write-Info "Ollama:          http://localhost:11434"
+    Write-Info "Qdrant:          http://localhost:6333/dashboard"
+    Write-Host ""
+    Write-Info "The frontend is connected to the Python backend"
+    Write-Info "View logs: .\run.ps1 logs python-backend"
+    Write-Info "Stop:      .\run.ps1 stop"
+}
+
+# Both profiles - start both backends + frontend
+function Invoke-Both {
+    Write-Header "Starting BOTH Backends (Comparison Mode)"
+
+    Write-Info "Starting .NET + Python backends + frontend (profile: both)..."
+    docker compose --profile both up --build -d
+
+    Write-Host ""
+    Write-Success "Services started!"
+    Write-Info "Frontend:        http://localhost:5173"
+    Write-Info ".NET Backend:    http://localhost:5000"
+    Write-Info "Python Backend:  http://localhost:8090"
+    Write-Info "Ollama:          http://localhost:11434"
+    Write-Info "Qdrant:          http://localhost:6333/dashboard"
+    Write-Host ""
+    Write-Info "Both backends are running! Frontend defaults to .NET backend."
+    Write-Info "You can test both backends side-by-side for comparison."
+    Write-Host ""
+    Write-Info "View .NET logs:   .\run.ps1 logs backend"
+    Write-Info "View Python logs: .\run.ps1 logs python-backend"
+    Write-Info "Stop:             .\run.ps1 stop"
+}
+
 # Stop command
 function Invoke-Stop {
     Write-Header "Stopping Services"
@@ -383,6 +461,15 @@ function Invoke-Ps {
 
 # Main command dispatcher
 switch ($Command.ToLower()) {
+    "dotnet" {
+        Invoke-DotNet
+    }
+    "python" {
+        Invoke-Python
+    }
+    "both" {
+        Invoke-Both
+    }
     "dev" {
         Invoke-Dev
     }

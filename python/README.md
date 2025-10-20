@@ -9,11 +9,13 @@ This implementation focuses exclusively on **LangGraph primitives** to maximize 
 ### ✅ ALLOWED Dependencies
 
 **LangGraph Core (Primary Focus):**
+
 - `langgraph` - Graph orchestration, state management, checkpoints, streaming
 - `langchain-core` - **ONLY** for: `BaseMessage`, `ChatPromptTemplate`, `RunnableConfig`
 - `langchain-ollama` - **ONLY** for: `ChatOllama` LLM wrapper
 
 **Direct API Clients (No LangChain Wrappers):**
+
 - `httpx` - For Tavily web search (direct API calls)
 - `qdrant-client` - For vector store (direct API calls)
 - `sqlalchemy` - For database ORM
@@ -23,6 +25,7 @@ This implementation focuses exclusively on **LangGraph primitives** to maximize 
 ### ❌ AVOID These LangChain Components
 
 **NEVER use these packages/modules:**
+
 - ❌ `langchain` - Main package (too broad, not graph-focused)
 - ❌ `langchain.agents` - Agent framework (LangGraph replaces this)
 - ❌ `langchain.chains` - Chain abstractions (LangGraph replaces this)
@@ -56,7 +59,7 @@ uvicorn ran_py.api.app:app --reload --port 8090
 
 ## Project Structure
 
-```
+```text
 python/
 ├── ran_py/                    # Main package
 │   ├── models/                # Pydantic schemas (match .NET)
@@ -92,6 +95,7 @@ pytest --cov=ran_py --cov-report=html
 ## Shared Database
 
 Python and .NET share the same SQLite database (`data/ran.db`):
+
 - SQLAlchemy models use **PascalCase** column names (match EF Core)
 - Both systems read/write `Tasks`, `TaskEvents`, `TaskReports` tables
 - Repository pattern mirrors .NET `ITaskRepository` interface

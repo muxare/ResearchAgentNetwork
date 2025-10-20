@@ -12,16 +12,16 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for layer caching
-COPY requirements.txt .
+COPY python/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Development image
 FROM base AS development
 
 # Copy application code
-COPY ran_py/ ./ran_py/
-COPY tests/ ./tests/
-COPY pytest.ini .
+COPY python/ran_py/ ./ran_py/
+COPY python/tests/ ./tests/
+COPY python/pytest.ini .
 
 # Install development dependencies
 RUN pip install --no-cache-dir pytest pytest-asyncio pytest-cov ruff mypy
@@ -36,7 +36,7 @@ CMD ["uvicorn", "ran_py.api.app:app", "--host", "0.0.0.0", "--port", "8090", "--
 FROM base AS production
 
 # Copy only application code (no tests)
-COPY ran_py/ ./ran_py/
+COPY python/ran_py/ ./ran_py/
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
