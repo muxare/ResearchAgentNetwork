@@ -84,16 +84,38 @@ def get_db() -> Generator[Session, None, None]:
 
 
 @asynccontextmanager
-async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
-    """Get an asynchronous database session.
+async def get_async_db_context() -> AsyncGenerator[AsyncSession, None]:
+    """Get an asynchronous database session as a context manager.
 
     Yields:
         Async database session
 
     Example:
-        async with get_async_db() as db:
+        async with get_async_db_context() as db:
             result = await db.execute(select(TaskEntity).filter_by(Id=task_id))
             task = result.scalar_one_or_none()
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
+    """Get an asynchronous database session for FastAPI dependency injection.
+
+    Yields:
+        Async database session
+
+    Example (with FastAPI):
+        @app.get("/tasks")
+        async def list_tasks(db: AsyncSession = Depends(get_async_db)):
+            ...
     """
     async with AsyncSessionLocal() as session:
         try:

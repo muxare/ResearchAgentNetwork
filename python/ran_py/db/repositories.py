@@ -109,7 +109,8 @@ class TaskRepository:
             # Update existing task
             existing.Description = task.description
             existing.Priority = task.priority
-            existing.Status = task.status.value
+            # TaskStatus enum uses use_enum_values=True, so it's already a string
+            existing.Status = task.status if isinstance(task.status, str) else task.status.value
             existing.UpdatedAtUtc = datetime.utcnow()
             existing.ParentTaskId = task.parent_task_id
         else:
@@ -118,7 +119,8 @@ class TaskRepository:
                 Id=task.id,
                 Description=task.description,
                 Priority=task.priority,
-                Status=task.status.value,
+                # TaskStatus enum uses use_enum_values=True, so it's already a string
+                Status=task.status if isinstance(task.status, str) else task.status.value,
                 CreatedAtUtc=task.created_at,
                 UpdatedAtUtc=None,
                 ParentTaskId=task.parent_task_id,

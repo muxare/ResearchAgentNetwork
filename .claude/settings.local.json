@@ -21,7 +21,15 @@
       "Bash(git commit:*)",
       "Bash(findstr:*)",
       "Bash(pip install:*)",
-      "Bash(docker system prune -f)"
+      "Bash(docker system prune -f)",
+      "Bash(tee python_api_error.log)",
+      "Bash(curl -v http://localhost:8090/api/tasks)",
+      "Bash(curl -s http://localhost:8090/api/tasks)",
+      "Bash(curl -X POST http://localhost:8090/api/tasks -H \"Content-Type: application/json\" -d \"{\"\"description\"\":\"\"Explain the basics of quantum computing\"\",\"\"priority\"\":5}\")",
+      "Bash(curl -s http://localhost:8090/api/tasks/0fc22d91-141d-40b0-92cd-68fe223906b6)",
+      "Bash(pytest tests/unit/test_repositories.py -v)",
+      "Bash(cat pythonpython_api_error.log)",
+      "Bash(curl -s http://localhost:8090/health)"
     ],
     "deny": [],
     "ask": []
